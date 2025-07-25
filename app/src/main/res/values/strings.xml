@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TimeTracker Pro</string>
+
+    <!-- Login -->
+    <string name="sign_in">Sign In</string>
+    <string name="sign_in_with_email">Sign In with Email</string>
+    <string name="sign_in_with_google">Sign In with Google</string>
+    <string name="email_address">Email Address</string>
+    <string name="password">Password</string>
+    <string name="remember_me">Remember me</string>
+    <string name="forgot_password">Forgot password?</string>
+    <string name="dont_have_account">Don\'t have an account? Sign up here</string>
+
+    <!-- Registration -->
+    <string name="employee_registration">Employee Registration</string>
+    <string name="create_account">Create Account</string>
+    <string name="full_name">Full Name</string>
+    <string name="employee_id">Employee ID</string>
+    <string name="phone_number">Phone Number</string>
+    <string name="confirm_password">Confirm Password</string>
+    <string name="terms_agreement">I agree to the Terms of Service and Privacy Policy</string>
+    <string name="already_have_account">Already have an account? Sign in here</string>
+
+    <!-- Dashboard -->
+    <string name="admin_dashboard">Admin Dashboard</string>
+    <string name="employee_dashboard">Employee Dashboard</string>
+    <string name="total_employees">Total Employees</string>
+    <string name="present_today">Present Today</string>
+    <string name="late_arrivals">Late Arrivals</string>
+    <string name="avg_hours_day">Avg Hours/Day</string>
+    <string name="todays_attendance">Today\'s Attendance</string>
+    <string name="export_report">Export Report</string>
+
+    <!-- Menu Items -->
+    <string name="action_profile">Profile</string>
+    <string name="action_logout">Logout</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_reports">Reports</string>
+
+    <!-- General -->
+    <string name="loading">Loading...</string>
+    <string name="error_occurred">An error occurred</string>
+    <string name="success">Success</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+
+    <!-- Firebase -->
+    <string name="default_web_client_id">348700373991-vf0klpe6ie9i4aj14drol44ckb6dodqm.apps.googleusercontent.com</string>
+</resources>

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "348700373991",
+    "project_id": "attendance-system-demo-d6c09",
+    "storage_bucket": "attendance-system-demo-d6c09.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:348700373991:android:c3aa41943b402264a24342",
+        "android_client_info": {
+          "package_name": "org.smart.attendance_beta"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "348700373991-vf0klpe6ie9i4aj14drol44ckb6dodqm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCuYYHkuFTX2PB4RmHkWWFXNSwzpj15wBg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "348700373991-vf0klpe6ie9i4aj14drol44ckb6dodqm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
