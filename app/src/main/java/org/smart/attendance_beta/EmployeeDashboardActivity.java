@@ -22,6 +22,7 @@ import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.Query;
@@ -77,6 +78,14 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
         // Initialize views
         initViews();
 
+        // FIXED: Check if user is authenticated before proceeding
+        if (mAuth.getCurrentUser() == null) {
+            // User not authenticated, redirect to login
+            Toast.makeText(this, "Authentication required. Please login again.", Toast.LENGTH_LONG).show();
+            redirectToLogin();
+            return;
+        }
+
         // Load data
         loadUserData();
         loadCompanyLocation();
@@ -86,6 +95,13 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
 
         // Setup click listeners
         setupClickListeners();
+    }
+
+    private void redirectToLogin() {
+        Intent intent = new Intent(EmployeeDashboardActivity.this, LoginActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(intent);
+        finish();
     }
 
     private void initViews() {
@@ -124,8 +140,21 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
     }
 
     private void loadUserData() {
-        // Get current user's UID
-        String currentUserId = mAuth.getCurrentUser().getUid();
+        // FIXED: Add null check for current user
+        FirebaseUser currentUser = mAuth.getCurrentUser();
+        if (currentUser == null) {
+            showError("User not authenticated. Please login again.");
+            redirectToLogin();
+            return;
+        }
+
+        // Get current user's UID safely
+        String currentUserId = currentUser.getUid();
+        if (currentUserId == null) {
+            showError("Unable to get user ID. Please login again.");
+            redirectToLogin();
+            return;
+        }
 
         // Query employees collection to find user by Firebase UID or use stored employeeDocId
         if (employeeDocId != null) {
@@ -133,29 +162,44 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
             loadEmployeeByDocId(employeeDocId);
         } else {
             // Fallback: try to find by Firebase UID (in case of Google sign-in users)
-            db.collection("employees")
-                    .whereEqualTo("email", mAuth.getCurrentUser().getEmail())
-                    .get()
-                    .addOnCompleteListener(task -> {
-                        if (task.isSuccessful() && !task.getResult().isEmpty()) {
-                            DocumentSnapshot employeeDoc = task.getResult().getDocuments().get(0);
-                            employeeDocId = employeeDoc.getId();
+            String userEmail = currentUser.getEmail();
+            if (userEmail != null) {
+                db.collection("employees")
+                        .whereEqualTo("email", userEmail)
+                        .get()
+                        .addOnCompleteListener(task -> {
+                            if (task.isSuccessful() && !task.getResult().isEmpty()) {
+                                DocumentSnapshot employeeDoc = task.getResult().getDocuments().get(0);
+                                employeeDocId = employeeDoc.getId();
 
-                            // Store for future use
-                            getSharedPreferences("attendance_prefs", MODE_PRIVATE)
-                                    .edit()
-                                    .putString("employee_doc_id", employeeDocId)
-                                    .apply();
+                                // Store for future use
+                                getSharedPreferences("attendance_prefs", MODE_PRIVATE)
+                                        .edit()
+                                        .putString("employee_doc_id", employeeDocId)
+                                        .apply();
 
-                            loadEmployeeData(employeeDoc);
-                        } else {
-                            showError("Employee data not found. Please contact HR.");
-                        }
-                    });
+                                loadEmployeeData(employeeDoc);
+                            } else {
+                                showError("Employee data not found. Please contact HR.");
+                            }
+                        })
+                        .addOnFailureListener(e -> {
+                            showError("Error loading employee data: " + e.getMessage());
+                        });
+            } else {
+                showError("User email not found. Please login again.");
+                redirectToLogin();
+            }
         }
     }
 
     private void loadEmployeeByDocId(String docId) {
+        if (docId == null || docId.isEmpty()) {
+            showError("Invalid employee ID. Please login again.");
+            redirectToLogin();
+            return;
+        }
+
         db.collection("employees").document(docId)
                 .get()
                 .addOnCompleteListener(task -> {
@@ -165,36 +209,49 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
                             loadEmployeeData(document);
                         } else {
                             showError("Employee record not found.");
+                            // Clear stored employee ID if record doesn't exist
+                            getSharedPreferences("attendance_prefs", MODE_PRIVATE)
+                                    .edit()
+                                    .remove("employee_doc_id")
+                                    .apply();
+                            redirectToLogin();
                         }
                     } else {
                         showError("Error loading employee data: " + task.getException().getMessage());
                     }
+                })
+                .addOnFailureListener(e -> {
+                    showError("Failed to load employee data: " + e.getMessage());
                 });
     }
 
     private void loadEmployeeData(DocumentSnapshot employeeDoc) {
-        employeeName = employeeDoc.getString("name");
-        pfNumber = employeeDoc.getString("pfNumber");
-        department = employeeDoc.getString("department");
+        try {
+            employeeName = employeeDoc.getString("name");
+            pfNumber = employeeDoc.getString("pfNumber");
+            department = employeeDoc.getString("department");
 
-        // Update UI with employee data
-        if (employeeName != null) {
-            String firstName = getFirstName(employeeName);
-            String greeting = DateTimeUtils.getTimeBasedGreeting();
-            tvWelcome.setText(greeting + ", " + firstName + "!");
+            // Update UI with employee data
+            if (employeeName != null) {
+                String firstName = getFirstName(employeeName);
+                String greeting = DateTimeUtils.getTimeBasedGreeting();
+                tvWelcome.setText(greeting + ", " + firstName + "!");
+            }
+
+            if (pfNumber != null) {
+                tvEmployeeId.setText("PF: " + pfNumber);
+            }
+
+            if (department != null) {
+                tvDepartment.setText(department);
+            }
+
+            // Load attendance data after getting employee info
+            loadTodayAttendance();
+            loadWeeklyStats();
+        } catch (Exception e) {
+            showError("Error processing employee data: " + e.getMessage());
         }
-
-        if (pfNumber != null) {
-            tvEmployeeId.setText("PF: " + pfNumber);
-        }
-
-        if (department != null) {
-            tvDepartment.setText(department);
-        }
-
-        // Load attendance data after getting employee info
-        loadTodayAttendance();
-        loadWeeklyStats();
     }
 
     private String getFirstName(String fullName) {
@@ -219,9 +276,13 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
                     if (task.isSuccessful()) {
                         DocumentSnapshot document = task.getResult();
                         if (document.exists()) {
-                            companyLatitude = document.getDouble("latitude");
-                            companyLongitude = document.getDouble("longitude");
-                            companyRadius = document.getLong("radius").intValue();
+                            Double lat = document.getDouble("latitude");
+                            Double lng = document.getDouble("longitude");
+                            Long radius = document.getLong("radius");
+
+                            if (lat != null) companyLatitude = lat;
+                            if (lng != null) companyLongitude = lng;
+                            if (radius != null) companyRadius = radius.intValue();
                         }
                         // Start location updates after getting company location
                         startLocationUpdates();
@@ -230,6 +291,10 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
                         // Use default location and start updates anyway
                         startLocationUpdates();
                     }
+                })
+                .addOnFailureListener(e -> {
+                    Toast.makeText(this, "Failed to load company location", Toast.LENGTH_SHORT).show();
+                    startLocationUpdates();
                 });
     }
 
@@ -266,6 +331,10 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
                             tvHoursWorked.setText(DateTimeUtils.formatHoursWorked(hours) + " (ongoing)");
                         }
                     }
+                })
+                .addOnFailureListener(e -> {
+                    // Silently handle failure for attendance data
+                    // No need to show error as this is optional data
                 });
     }
 
@@ -296,6 +365,10 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
                         tvWeeklyHours.setText(DateTimeUtils.formatHoursWorked(totalWeeklyHours));
                         tvAttendanceStreak.setText(attendanceDays + " days");
                     }
+                })
+                .addOnFailureListener(e -> {
+                    // Silently handle failure for weekly stats
+                    // No need to show error as this is optional data
                 });
     }
 
@@ -435,6 +508,12 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
                 .setTitle("Logout")
                 .setMessage("Are you sure you want to logout?")
                 .setPositiveButton("Yes", (dialog, which) -> {
+                    // Clear stored data
+                    getSharedPreferences("attendance_prefs", MODE_PRIVATE)
+                            .edit()
+                            .clear()
+                            .apply();
+
                     mAuth.signOut();
                     Intent intent = new Intent(EmployeeDashboardActivity.this, LoginActivity.class);
                     intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
@@ -448,9 +527,27 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+
+        // FIXED: Check authentication state on resume
+        if (mAuth.getCurrentUser() == null) {
+            redirectToLogin();
+            return;
+        }
+
         // Refresh data when returning to dashboard
         loadTodayAttendance();
         loadWeeklyStats();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+
+        // FIXED: Check authentication state on start
+        if (mAuth.getCurrentUser() == null) {
+            redirectToLogin();
+            return;
+        }
     }
 
     @Override

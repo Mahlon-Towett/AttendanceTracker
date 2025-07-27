@@ -91,6 +91,9 @@ public class RegistrationActivity extends AppCompatActivity {
         });
     }
 
+    // In RegistrationActivity.java, in the checkEmployeeExists method
+// Replace this section:
+
     private void checkEmployeeExists(String pfNumber) {
         db.collection("employees")
                 .whereEqualTo("pfNumber", pfNumber.toUpperCase())
@@ -113,7 +116,7 @@ public class RegistrationActivity extends AppCompatActivity {
 
                             tvEmployeeInfo.setText("✅ Found: " + name + " | " + department + " | " + role);
                             tvEmployeeInfo.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
-                            btnRegister.setEnabled(true);
+                            btnRegister.setEnabled(true); // ← This enables the button
                         }
                         tvEmployeeInfo.setVisibility(View.VISIBLE);
                     } else {
@@ -121,7 +124,25 @@ public class RegistrationActivity extends AppCompatActivity {
                         tvEmployeeInfo.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
                         tvEmployeeInfo.setVisibility(View.VISIBLE);
                         btnRegister.setEnabled(false);
+
+                        // TEMPORARY FIX: Enable button anyway for testing
+                        // Remove this after you add employees to database
+                        btnRegister.setEnabled(true);
+                        tvEmployeeInfo.setText("⚠️ Testing mode: PF Number not found but button enabled");
+                        tvEmployeeInfo.setTextColor(getResources().getColor(android.R.color.holo_orange_dark));
                     }
+                })
+                .addOnFailureListener(e -> {
+                    tvEmployeeInfo.setText("❌ Error checking employee: " + e.getMessage());
+                    tvEmployeeInfo.setTextColor(getResources().getColor(android.R.color.holo_red_dark));
+                    tvEmployeeInfo.setVisibility(View.VISIBLE);
+                    btnRegister.setEnabled(false);
+
+                    // TEMPORARY FIX: Enable button anyway for testing
+                    // Remove this after fixing database connection
+                    btnRegister.setEnabled(true);
+                    tvEmployeeInfo.setText("⚠️ Testing mode: Database error but button enabled");
+                    tvEmployeeInfo.setTextColor(getResources().getColor(android.R.color.holo_orange_dark));
                 });
     }
 

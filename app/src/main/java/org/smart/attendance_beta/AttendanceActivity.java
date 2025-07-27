@@ -1,3 +1,4 @@
+// Updated AttendanceActivity.java with time security measures
 package org.smart.attendance_beta;
 
 import android.Manifest;
@@ -32,6 +33,7 @@ import com.google.firebase.firestore.QuerySnapshot;
 import org.smart.attendance_beta.models.AttendanceRecord;
 import org.smart.attendance_beta.utils.DateTimeUtils;
 import org.smart.attendance_beta.utils.LocationUtils;
+import org.smart.attendance_beta.utils.TimeSecurityUtils;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -43,27 +45,32 @@ public class AttendanceActivity extends AppCompatActivity {
     // UI Components
     private TextView tvCurrentTime, tvLocationStatus, tvDistanceFromOffice;
     private TextView tvTodayStatus, tvClockInTime, tvClockOutTime, tvHoursWorked;
+    private TextView tvTimeValidationStatus; // New: Shows time validation status
     private Button btnClockIn, btnClockOut;
     private ProgressBar progressBar;
-    private CardView cvLocationInfo, cvAttendanceInfo;
+    private CardView cvLocationInfo, cvAttendanceInfo, cvTimeValidation;
 
     // Firebase
     private FirebaseFirestore db;
     private FusedLocationProviderClient fusedLocationClient;
 
     // Location and Employee Data
-    private double companyLatitude = -1.2921; // Default Nairobi coordinates
+    private double companyLatitude = -1.2921;
     private double companyLongitude = 36.8219;
-    private int companyRadius = 200; // 200 meters
+    private int companyRadius = 200;
     private String employeeDocId;
     private String pfNumber;
     private String employeeName;
     private boolean isClockedIn = false;
     private String todayAttendanceDocId = null;
-    private String workStartTime = "08:00"; // Normal work start time
-    private String workEndTime = "17:00";   // Normal work end time
+    private String workStartTime = "08:00";
+    private String workEndTime = "17:00";
 
-    // Location updates
+    // Time Security
+    private boolean isTimeValid = false;
+    private TimeSecurityUtils.TimeValidationResult lastTimeValidation;
+
+    // Handlers
     private Handler locationUpdateHandler = new Handler();
     private Runnable locationUpdateRunnable;
     private Handler timeUpdateHandler = new Handler();
@@ -75,20 +82,20 @@ public class AttendanceActivity extends AppCompatActivity {
         setContentView(R.layout.activity_attendance);
 
         // Setup toolbar
-        Toolbar toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
-        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-        getSupportActionBar().setTitle("Attendance");
+        setupToolbar();
 
         // Initialize Firebase
         db = FirebaseFirestore.getInstance();
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
 
-        // Get employee data from intent or SharedPreferences
+        // Get employee data
         getEmployeeData();
 
         // Initialize views
         initViews();
+
+        // SECURITY: Validate time first
+        validateDeviceTime();
 
         // Load data
         loadCompanyLocation();
@@ -102,19 +109,93 @@ public class AttendanceActivity extends AppCompatActivity {
         setupClickListeners();
     }
 
+    private void setupToolbar() {
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        if (toolbar != null) {
+            setSupportActionBar(toolbar);
+            if (getSupportActionBar() != null) {
+                getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+                getSupportActionBar().setTitle("⏰ Attendance");
+            }
+        }
+    }
+
+    /**
+     * SECURITY: Validate device time against server time
+     */
+    private void validateDeviceTime() {
+        TimeSecurityUtils.validateDeviceTime(this, new TimeSecurityUtils.TimeValidationCallback() {
+            @Override
+            public void onValidationComplete(TimeSecurityUtils.TimeValidationResult result) {
+                runOnUiThread(() -> {
+                    lastTimeValidation = result;
+                    isTimeValid = result.isTimeValid;
+                    updateTimeValidationUI(result);
+                    updateButtonStates(); // Re-evaluate button states after time validation
+                });
+            }
+        });
+    }
+
+    /**
+     * Update UI based on time validation result
+     */
+    private void updateTimeValidationUI(TimeSecurityUtils.TimeValidationResult result) {
+        if (tvTimeValidationStatus == null) return;
+
+        if (result.isTimeValid) {
+            tvTimeValidationStatus.setText("✅ Device time verified");
+            tvTimeValidationStatus.setTextColor(getResources().getColor(R.color.green_600));
+            if (cvTimeValidation != null) {
+                cvTimeValidation.setCardBackgroundColor(getResources().getColor(R.color.green_50));
+            }
+        } else {
+            tvTimeValidationStatus.setText("⚠️ Time validation failed: " + result.errorMessage);
+            tvTimeValidationStatus.setTextColor(getResources().getColor(R.color.red_600));
+            if (cvTimeValidation != null) {
+                cvTimeValidation.setCardBackgroundColor(getResources().getColor(R.color.red_50));
+            }
+
+            // Show warning dialog
+            showTimeValidationWarning(result);
+        }
+    }
+
+    /**
+     * Show warning dialog when time validation fails
+     */
+    private void showTimeValidationWarning(TimeSecurityUtils.TimeValidationResult result) {
+        new AlertDialog.Builder(this)
+                .setTitle("⚠️ Time Validation Failed")
+                .setMessage("Your device time appears to be incorrect or manually set.\n\n" +
+                        "Error: " + result.errorMessage + "\n\n" +
+                        "Please enable automatic date & time in your device settings to use attendance features.")
+                .setPositiveButton("Settings", (dialog, which) -> {
+                    // Open device time settings (implementation depends on Android version)
+                    try {
+                        startActivity(new android.content.Intent(android.provider.Settings.ACTION_DATE_SETTINGS));
+                    } catch (Exception e) {
+                        Toast.makeText(this, "Please manually enable automatic date & time in Settings",
+                                Toast.LENGTH_LONG).show();
+                    }
+                })
+                .setNegativeButton("Retry", (dialog, which) -> {
+                    validateDeviceTime(); // Retry validation
+                })
+                .setCancelable(false)
+                .show();
+    }
+
     private void getEmployeeData() {
-        // Try to get from intent first
         employeeDocId = getIntent().getStringExtra("employee_doc_id");
         pfNumber = getIntent().getStringExtra("pf_number");
         employeeName = getIntent().getStringExtra("employee_name");
 
-        // Fallback to SharedPreferences
         if (employeeDocId == null) {
             employeeDocId = getSharedPreferences("attendance_prefs", MODE_PRIVATE)
                     .getString("employee_doc_id", null);
         }
 
-        // If still null, load from Firestore
         if (employeeDocId != null && (pfNumber == null || employeeName == null)) {
             loadEmployeeDetails();
         }
@@ -142,13 +223,14 @@ public class AttendanceActivity extends AppCompatActivity {
         tvClockInTime = findViewById(R.id.tv_clock_in_time);
         tvClockOutTime = findViewById(R.id.tv_clock_out_time);
         tvHoursWorked = findViewById(R.id.tv_hours_worked);
+        tvTimeValidationStatus = findViewById(R.id.tv_time_validation_status);
         btnClockIn = findViewById(R.id.btn_clock_in);
         btnClockOut = findViewById(R.id.btn_clock_out);
         progressBar = findViewById(R.id.progress_bar);
         cvLocationInfo = findViewById(R.id.cv_location_info);
         cvAttendanceInfo = findViewById(R.id.cv_attendance_info);
+        cvTimeValidation = findViewById(R.id.cv_time_validation);
 
-        // Set default values
         setDefaultValues();
     }
 
@@ -160,6 +242,10 @@ public class AttendanceActivity extends AppCompatActivity {
         tvClockInTime.setText("--:--");
         tvClockOutTime.setText("--:--");
         tvHoursWorked.setText("0h 0m");
+
+        if (tvTimeValidationStatus != null) {
+            tvTimeValidationStatus.setText("Validating device time...");
+        }
 
         btnClockIn.setEnabled(false);
         btnClockOut.setEnabled(false);
@@ -212,7 +298,6 @@ public class AttendanceActivity extends AppCompatActivity {
                                 tvTodayStatus.setText("Work Complete ✅");
                                 tvClockOutTime.setText(DateTimeUtils.formatTimeForDisplay(clockOutTime));
 
-                                // Calculate and display hours worked
                                 double hours = DateTimeUtils.calculateHoursWorked(clockInTime, clockOutTime);
                                 tvHoursWorked.setText(DateTimeUtils.formatHoursWorked(hours));
 
@@ -221,7 +306,6 @@ public class AttendanceActivity extends AppCompatActivity {
                             }
                         }
                     } else {
-                        // No attendance record for today
                         tvTodayStatus.setText("Ready to Clock In");
                         btnClockIn.setVisibility(View.VISIBLE);
                         btnClockOut.setVisibility(View.GONE);
@@ -236,15 +320,14 @@ public class AttendanceActivity extends AppCompatActivity {
             public void run() {
                 tvCurrentTime.setText(DateTimeUtils.getCurrentDisplayTime());
 
-                // Update hours worked if clocked in
                 if (isClockedIn && !tvClockInTime.getText().toString().equals("--:--")) {
-                    String clockInTime = tvClockInTime.getText().toString() + ":00"; // Add seconds
+                    String clockInTime = tvClockInTime.getText().toString() + ":00";
                     String currentTime = DateTimeUtils.getCurrentTime();
                     double hours = DateTimeUtils.calculateHoursWorked(clockInTime, currentTime);
                     tvHoursWorked.setText(DateTimeUtils.formatHoursWorked(hours) + " (ongoing)");
                 }
 
-                timeUpdateHandler.postDelayed(this, 1000); // Update every second
+                timeUpdateHandler.postDelayed(this, 1000);
             }
         };
         timeUpdateHandler.post(timeUpdateRunnable);
@@ -260,7 +343,7 @@ public class AttendanceActivity extends AppCompatActivity {
             @Override
             public void run() {
                 updateLocation();
-                locationUpdateHandler.postDelayed(this, 5000); // Update every 5 seconds
+                locationUpdateHandler.postDelayed(this, 5000);
             }
         };
         locationUpdateHandler.post(locationUpdateRunnable);
@@ -320,10 +403,8 @@ public class AttendanceActivity extends AppCompatActivity {
     }
 
     private void updateLocationUI(double distance) {
-        // Update distance display
         tvDistanceFromOffice.setText(LocationUtils.formatDistance(distance) + " from office");
 
-        // Update status and card color
         String status = LocationUtils.getLocationStatus(distance, companyRadius);
         tvLocationStatus.setText(status);
 
@@ -336,8 +417,17 @@ public class AttendanceActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * SECURITY: Enhanced button state validation including time validation
+     */
     private void updateButtonStates() {
-        // Get current location to check if in range
+        // SECURITY CHECK: Disable buttons if time is not valid
+        if (!isTimeValid) {
+            btnClockIn.setEnabled(false);
+            btnClockOut.setEnabled(false);
+            return;
+        }
+
         if (!LocationUtils.hasLocationPermissions(this)) {
             btnClockIn.setEnabled(false);
             btnClockOut.setEnabled(false);
@@ -355,15 +445,12 @@ public class AttendanceActivity extends AppCompatActivity {
                         boolean inRange = distance <= companyRadius;
 
                         if (isClockedIn) {
-                            // Already clocked in, enable clock out if in range
-                            btnClockOut.setEnabled(inRange);
+                            btnClockOut.setEnabled(inRange && isTimeValid); // SECURITY: Time check
                             btnClockIn.setEnabled(false);
                         } else if (todayAttendanceDocId == null) {
-                            // Not clocked in today, enable clock in if in range
-                            btnClockIn.setEnabled(inRange);
+                            btnClockIn.setEnabled(inRange && isTimeValid); // SECURITY: Time check
                             btnClockOut.setEnabled(false);
                         } else {
-                            // Already completed for today
                             btnClockIn.setEnabled(false);
                             btnClockOut.setEnabled(false);
                         }
@@ -372,13 +459,26 @@ public class AttendanceActivity extends AppCompatActivity {
     }
 
     private void setupClickListeners() {
-        btnClockIn.setOnClickListener(v -> clockIn());
+        btnClockIn.setOnClickListener(v -> {
+            // SECURITY: Re-validate time before allowing clock-in
+            if (!isTimeValid) {
+                showTimeValidationWarning(lastTimeValidation);
+                return;
+            }
+            clockIn();
+        });
+
         btnClockOut.setOnClickListener(v -> {
-            // Check if it's early clock out
+            // SECURITY: Re-validate time before allowing clock-out
+            if (!isTimeValid) {
+                showTimeValidationWarning(lastTimeValidation);
+                return;
+            }
+
             if (isEarlyClockOut()) {
                 showEarlyClockOutDialog();
             } else {
-                clockOut(null); // Normal clock out, no reason needed
+                clockOut(null);
             }
         });
 
@@ -386,19 +486,26 @@ public class AttendanceActivity extends AppCompatActivity {
             updateLocation();
             Toast.makeText(this, "Location refreshed", Toast.LENGTH_SHORT).show();
         });
+
+        // SECURITY: Allow manual time re-validation
+        if (cvTimeValidation != null) {
+            cvTimeValidation.setOnClickListener(v -> {
+                validateDeviceTime();
+                Toast.makeText(this, "Time validation refreshed", Toast.LENGTH_SHORT).show();
+            });
+        }
     }
 
     private boolean isEarlyClockOut() {
         String currentTime = DateTimeUtils.getCurrentTime();
         try {
-            // Parse times for comparison
             java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
             java.util.Date current = timeFormat.parse(currentTime);
             java.util.Date workEnd = timeFormat.parse(workEndTime + ":00");
 
             return current.before(workEnd);
         } catch (java.text.ParseException e) {
-            return false; // If parsing fails, assume normal clock out
+            return false;
         }
     }
 
@@ -423,9 +530,18 @@ public class AttendanceActivity extends AppCompatActivity {
                 .show();
     }
 
+    /**
+     * SECURITY: Enhanced clock-in with secure timestamp
+     */
     private void clockIn() {
         if (!LocationUtils.hasLocationPermissions(this)) {
             requestLocationPermissions();
+            return;
+        }
+
+        // SECURITY: Final time validation before clock-in
+        if (!isTimeValid) {
+            Toast.makeText(this, "Cannot clock in: Device time validation failed", Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -440,7 +556,7 @@ public class AttendanceActivity extends AppCompatActivity {
                         );
 
                         if (distance <= companyRadius) {
-                            performClockIn(location.getLatitude(), location.getLongitude());
+                            performSecureClockIn(location.getLatitude(), location.getLongitude());
                         } else {
                             setLoading(false);
                             Toast.makeText(this, "You're too far from the office to clock in",
@@ -459,8 +575,21 @@ public class AttendanceActivity extends AppCompatActivity {
                 });
     }
 
-    private void performClockIn(double latitude, double longitude) {
+    /**
+     * SECURITY: Secure clock-in with enhanced timestamp validation
+     */
+    private void performSecureClockIn(double latitude, double longitude) {
         String today = DateTimeUtils.getCurrentDate();
+
+        // SECURITY: Create secure timestamp with validation data
+        TimeSecurityUtils.AttendanceTimestamp secureTimestamp =
+                TimeSecurityUtils.createSecureTimestamp(this);
+
+        if (!secureTimestamp.isValid()) {
+            setLoading(false);
+            Toast.makeText(this, "Clock-in denied: Time validation failed", Toast.LENGTH_LONG).show();
+            return;
+        }
 
         AttendanceRecord record = new AttendanceRecord(
                 employeeDocId, pfNumber, employeeName, today,
@@ -472,7 +601,7 @@ public class AttendanceActivity extends AppCompatActivity {
         boolean isLate = DateTimeUtils.isLateArrival(currentTime, workStartTime);
         int lateMinutes = isLate ? DateTimeUtils.calculateLateMinutes(currentTime, workStartTime) : 0;
 
-        // Convert to map for Firestore
+        // SECURITY: Enhanced attendance data with time validation
         Map<String, Object> attendanceData = new HashMap<>();
         attendanceData.put("employeeDocId", record.getEmployeeDocId());
         attendanceData.put("pfNumber", record.getPfNumber());
@@ -488,6 +617,14 @@ public class AttendanceActivity extends AppCompatActivity {
         attendanceData.put("isLate", isLate);
         attendanceData.put("lateMinutes", lateMinutes);
         attendanceData.put("createdAt", record.getCreatedAt());
+
+        // SECURITY: Add time validation data
+        attendanceData.put("deviceTime", secureTimestamp.deviceTime);
+        attendanceData.put("serverTime", secureTimestamp.serverTime);
+        attendanceData.put("timeZone", secureTimestamp.timeZone);
+        attendanceData.put("autoTimeEnabled", secureTimestamp.autoTimeEnabled);
+        attendanceData.put("timeValidationMethod", lastTimeValidation != null ? lastTimeValidation.validationMethod : "UNKNOWN");
+        attendanceData.put("timeDifferenceMs", lastTimeValidation != null ? lastTimeValidation.timeDifferenceMs : 0);
 
         db.collection("attendance")
                 .add(attendanceData)
@@ -518,8 +655,17 @@ public class AttendanceActivity extends AppCompatActivity {
                 });
     }
 
+    /**
+     * SECURITY: Enhanced clock-out with secure timestamp
+     */
     private void clockOut(String earlyClockOutReason) {
         if (!LocationUtils.hasLocationPermissions(this) || todayAttendanceDocId == null) {
+            return;
+        }
+
+        // SECURITY: Final time validation before clock-out
+        if (!isTimeValid) {
+            Toast.makeText(this, "Cannot clock out: Device time validation failed", Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -534,7 +680,7 @@ public class AttendanceActivity extends AppCompatActivity {
                         );
 
                         if (distance <= companyRadius) {
-                            performClockOut(location.getLatitude(), location.getLongitude(), earlyClockOutReason);
+                            performSecureClockOut(location.getLatitude(), location.getLongitude(), earlyClockOutReason);
                         } else {
                             setLoading(false);
                             Toast.makeText(this, "You're too far from the office to clock out",
@@ -549,19 +695,41 @@ public class AttendanceActivity extends AppCompatActivity {
                 });
     }
 
-    private void performClockOut(double latitude, double longitude, String earlyClockOutReason) {
+    /**
+     * SECURITY: Secure clock-out with enhanced timestamp validation
+     */
+    private void performSecureClockOut(double latitude, double longitude, String earlyClockOutReason) {
+        // SECURITY: Create secure timestamp for clock-out
+        TimeSecurityUtils.AttendanceTimestamp secureTimestamp =
+                TimeSecurityUtils.createSecureTimestamp(this);
+
+        if (!secureTimestamp.isValid()) {
+            setLoading(false);
+            Toast.makeText(this, "Clock-out denied: Time validation failed", Toast.LENGTH_LONG).show();
+            return;
+        }
+
         String currentTime = DateTimeUtils.getCurrentTime();
 
         // Calculate hours worked
-        String clockInTime = tvClockInTime.getText().toString() + ":00"; // Add seconds
+        String clockInTime = tvClockInTime.getText().toString() + ":00";
         double hoursWorked = DateTimeUtils.calculateHoursWorked(clockInTime, currentTime);
 
+        // SECURITY: Enhanced clock-out data with time validation
         Map<String, Object> updates = new HashMap<>();
         updates.put("clockOutTime", currentTime);
         updates.put("clockOutTimestamp", com.google.firebase.Timestamp.now());
         updates.put("clockOutLatitude", latitude);
         updates.put("clockOutLongitude", longitude);
         updates.put("totalHours", hoursWorked);
+
+        // SECURITY: Add clock-out time validation data
+        updates.put("clockOutDeviceTime", secureTimestamp.deviceTime);
+        updates.put("clockOutServerTime", secureTimestamp.serverTime);
+        updates.put("clockOutTimeZone", secureTimestamp.timeZone);
+        updates.put("clockOutAutoTimeEnabled", secureTimestamp.autoTimeEnabled);
+        updates.put("clockOutTimeValidationMethod", lastTimeValidation != null ? lastTimeValidation.validationMethod : "UNKNOWN");
+        updates.put("clockOutTimeDifferenceMs", lastTimeValidation != null ? lastTimeValidation.timeDifferenceMs : 0);
 
         // Add early clock out reason if provided
         if (earlyClockOutReason != null && !earlyClockOutReason.isEmpty()) {
@@ -626,5 +794,12 @@ public class AttendanceActivity extends AppCompatActivity {
         if (timeUpdateHandler != null && timeUpdateRunnable != null) {
             timeUpdateHandler.removeCallbacks(timeUpdateRunnable);
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // SECURITY: Re-validate time when app resumes
+        validateDeviceTime();
     }
 }

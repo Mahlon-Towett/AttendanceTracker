@@ -44,10 +44,14 @@ public class LoginActivity extends AppCompatActivity {
         initViews();
         setupClickListeners();
 
-        // Check if user is already logged in
-        FirebaseUser currentUser = mAuth.getCurrentUser();
-        if (currentUser != null) {
-            checkUserRoleAndRedirect(currentUser.getUid());
+        // FIXED: Only check if user is already logged in if we're not doing auto_login
+        boolean autoLogin = getIntent().getBooleanExtra("auto_login", false);
+        if (!autoLogin) {
+            FirebaseUser currentUser = mAuth.getCurrentUser();
+            if (currentUser != null) {
+                // User is already logged in, check their role
+                checkUserRoleAndRedirect();
+            }
         }
     }
 
@@ -107,7 +111,7 @@ public class LoginActivity extends AppCompatActivity {
 
                         if (email != null) {
                             // Authenticate with Firebase Auth using generated email
-                            authenticateWithFirebase(email, password, employeeDoc.getId());
+                            authenticateWithFirebase(email, password, employeeDoc.getId(), employeeDoc);
                         } else {
                             setLoading(false);
                             Toast.makeText(LoginActivity.this,
@@ -120,10 +124,16 @@ public class LoginActivity extends AppCompatActivity {
                                 "PF Number not found. Please check your PF Number or register first.",
                                 Toast.LENGTH_LONG).show();
                     }
+                })
+                .addOnFailureListener(e -> {
+                    setLoading(false);
+                    Toast.makeText(LoginActivity.this,
+                            "Error connecting to database: " + e.getMessage(),
+                            Toast.LENGTH_LONG).show();
                 });
     }
 
-    private void authenticateWithFirebase(String email, String password, String employeeDocId) {
+    private void authenticateWithFirebase(String email, String password, String employeeDocId, DocumentSnapshot employeeDoc) {
         mAuth.signInWithEmailAndPassword(email, password)
                 .addOnCompleteListener(this, new OnCompleteListener<AuthResult>() {
                     @Override
@@ -134,7 +144,13 @@ public class LoginActivity extends AppCompatActivity {
                             // Sign in success
                             FirebaseUser user = mAuth.getCurrentUser();
                             if (user != null) {
-                                checkUserRoleAndRedirect(employeeDocId);
+                                // FIXED: Store employee data immediately after successful login
+                                storeEmployeeData(employeeDocId, employeeDoc);
+
+                                // Small delay to ensure data is stored
+                                new android.os.Handler().postDelayed(() -> {
+                                    checkUserRoleAndRedirect(employeeDoc);
+                                }, 500);
                             }
                         } else {
                             // Sign in failed
@@ -153,50 +169,85 @@ public class LoginActivity extends AppCompatActivity {
                 });
     }
 
-    private void checkUserRoleAndRedirect(String employeeDocId) {
-        db.collection("employees").document(employeeDocId)
-                .get()
-                .addOnCompleteListener(new OnCompleteListener<DocumentSnapshot>() {
-                    @Override
-                    public void onComplete(@NonNull Task<DocumentSnapshot> task) {
+    /**
+     * FIXED: Store employee data immediately after login
+     */
+    private void storeEmployeeData(String employeeDocId, DocumentSnapshot employeeDoc) {
+        try {
+            // Store employee document ID for future use
+            getSharedPreferences("attendance_prefs", MODE_PRIVATE)
+                    .edit()
+                    .putString("employee_doc_id", employeeDocId)
+                    .putString("employee_name", employeeDoc.getString("name"))
+                    .putString("employee_pf", employeeDoc.getString("pfNumber"))
+                    .putString("employee_email", employeeDoc.getString("email"))
+                    .putString("employee_department", employeeDoc.getString("department"))
+                    .putString("employee_role", employeeDoc.getString("role"))
+                    .apply();
+        } catch (Exception e) {
+            // If storing fails, at least store the essential employee doc ID
+            getSharedPreferences("attendance_prefs", MODE_PRIVATE)
+                    .edit()
+                    .putString("employee_doc_id", employeeDocId)
+                    .apply();
+        }
+    }
+
+    /**
+     * FIXED: Check user role with employee document data
+     */
+    private void checkUserRoleAndRedirect() {
+        // Get stored employee doc ID
+        String employeeDocId = getSharedPreferences("attendance_prefs", MODE_PRIVATE)
+                .getString("employee_doc_id", null);
+
+        if (employeeDocId != null) {
+            // Load employee data and redirect
+            db.collection("employees").document(employeeDocId)
+                    .get()
+                    .addOnCompleteListener(task -> {
                         if (task.isSuccessful()) {
                             DocumentSnapshot document = task.getResult();
                             if (document.exists()) {
-                                String role = document.getString("role");
-                                Boolean isActive = document.getBoolean("isActive");
-
-                                if (isActive != null && !isActive) {
-                                    Toast.makeText(LoginActivity.this,
-                                            "Your account has been deactivated. Please contact admin.",
-                                            Toast.LENGTH_LONG).show();
-                                    mAuth.signOut();
-                                    return;
-                                }
-
-                                // Store employee doc ID for future use
-                                getSharedPreferences("attendance_prefs", MODE_PRIVATE)
-                                        .edit()
-                                        .putString("employee_doc_id", employeeDocId)
-                                        .apply();
-
-                                if ("Admin".equalsIgnoreCase(role) || "Manager".equalsIgnoreCase(role)) {
-                                    redirectToAdminDashboard();
-                                } else {
-                                    redirectToEmployeeDashboard();
-                                }
+                                checkUserRoleAndRedirect(document);
                             } else {
-                                Toast.makeText(LoginActivity.this,
-                                        "Employee data not found. Please contact admin.",
-                                        Toast.LENGTH_LONG).show();
-                                mAuth.signOut();
+                                // Employee document not found, redirect to login
+                                clearStoredData();
+                                Toast.makeText(this, "Employee record not found. Please login again.", Toast.LENGTH_LONG).show();
                             }
                         } else {
-                            Toast.makeText(LoginActivity.this,
-                                    "Error fetching employee data: " + task.getException().getMessage(),
-                                    Toast.LENGTH_LONG).show();
+                            // Error loading employee data
+                            Toast.makeText(this, "Error loading employee data. Please try again.", Toast.LENGTH_LONG).show();
                         }
-                    }
-                });
+                    });
+        } else {
+            // No stored employee data, user needs to login
+            Toast.makeText(this, "Please login to continue.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void checkUserRoleAndRedirect(DocumentSnapshot employeeDoc) {
+        try {
+            String role = employeeDoc.getString("role");
+            Boolean isActive = employeeDoc.getBoolean("isActive");
+
+            if (isActive != null && !isActive) {
+                Toast.makeText(LoginActivity.this,
+                        "Your account has been deactivated. Please contact admin.",
+                        Toast.LENGTH_LONG).show();
+                mAuth.signOut();
+                clearStoredData();
+                return;
+            }
+
+            if ("Admin".equalsIgnoreCase(role) || "Manager".equalsIgnoreCase(role)) {
+                redirectToAdminDashboard();
+            } else {
+                redirectToEmployeeDashboard();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Error processing employee data: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     private void redirectToAdminDashboard() {
@@ -213,6 +264,13 @@ public class LoginActivity extends AppCompatActivity {
         finish();
     }
 
+    private void clearStoredData() {
+        getSharedPreferences("attendance_prefs", MODE_PRIVATE)
+                .edit()
+                .clear()
+                .apply();
+    }
+
     private void setLoading(boolean isLoading) {
         if (isLoading) {
             progressBar.setVisibility(View.VISIBLE);
@@ -226,14 +284,28 @@ public class LoginActivity extends AppCompatActivity {
     @Override
     protected void onStart() {
         super.onStart();
-        // Check if user is signed in and update UI accordingly
-        FirebaseUser currentUser = mAuth.getCurrentUser();
-        if (currentUser != null) {
-            String employeeDocId = getSharedPreferences("attendance_prefs", MODE_PRIVATE)
-                    .getString("employee_doc_id", null);
-            if (employeeDocId != null) {
-                checkUserRoleAndRedirect(employeeDocId);
+
+        // FIXED: Only auto-check if user is signed in when not coming from splash
+        boolean autoLogin = getIntent().getBooleanExtra("auto_login", false);
+        if (autoLogin) {
+            // Coming from splash screen, check if user should be auto-logged in
+            FirebaseUser currentUser = mAuth.getCurrentUser();
+            if (currentUser != null) {
+                setLoading(true);
+                checkUserRoleAndRedirect();
             }
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+        // Clear any previous error states
+        etPfNumber.setError(null);
+        etPassword.setError(null);
+
+        // Stop loading if it was running
+        setLoading(false);
     }
 }
