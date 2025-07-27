@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- Base Application Theme - Fixed Light Theme -->
-    <style name="AppTheme" parent="Theme.Material3.Light.NoActionBar">
+    <!-- Base Application Theme - Consistent Light/Dark Theme -->
+    <style name="Base.Theme.AttendanceBeta" parent="Theme.Material3.Light.NoActionBar">
         <!-- Primary Colors -->
         <item name="colorPrimary">@color/blue_600</item>
         <item name="colorPrimaryVariant">@color/blue_700</item>
@@ -28,18 +28,23 @@
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
 
-        <!-- Force Light Theme Always -->
+        <!-- Force Light Theme Always (No Dark Mode) -->
         <item name="android:forceDarkAllowed">false</item>
     </style>
 
     <!-- Splash Screen Theme -->
-    <style name="SplashTheme" parent="AppTheme">
+    <style name="Theme.Splash" parent="Base.Theme.AttendanceBeta">
         <item name="android:windowBackground">@drawable/splash_gradient_background</item>
         <item name="android:statusBarColor">@color/blue_700</item>
         <item name="android:navigationBarColor">@color/blue_700</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
+
+    <!-- AppTheme (Alternative name for consistency) -->
+    <style name="AppTheme" parent="Base.Theme.AttendanceBeta" />
 
     <!-- Button Styles -->
     <style name="PrimaryButton" parent="Widget.Material3.Button">
@@ -168,3 +173,4 @@
     </style>
 
 </resources>
+

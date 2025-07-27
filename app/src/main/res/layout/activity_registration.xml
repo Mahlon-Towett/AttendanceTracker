@@ -22,6 +22,16 @@
             android:alpha="0.1"
             android:background="@drawable/circle_white" />
 
+        <View
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:layout_alignParentBottom="true"
+            android:layout_alignParentStart="true"
+            android:layout_marginBottom="-60dp"
+            android:layout_marginStart="-60dp"
+            android:alpha="0.08"
+            android:background="@drawable/circle_white" />
+
         <!-- Main content -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -48,7 +58,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Join Our Team"
+                    android:text="Set Up Password"
                     android:textSize="28sp"
                     android:textStyle="bold"
                     android:textColor="@color/white"
@@ -59,11 +69,13 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Create your attendance account"
+                    android:text="Create your password using your PF Number"
                     android:textSize="16sp"
                     android:textColor="@color/white"
                     android:alpha="0.9"
-                    android:fontFamily="sans-serif-light" />
+                    android:fontFamily="sans-serif-light"
+                    android:textAlignment="center"
+                    android:paddingHorizontal="16dp" />
 
             </LinearLayout>
 
@@ -86,42 +98,26 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
-                        android:text="Create Account"
+                        android:text="Password Setup"
                         android:textSize="22sp"
                         android:textStyle="bold"
                         android:textColor="@color/gray_900"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:text="Enter your PF Number to get started"
+                        android:textSize="14sp"
+                        android:textColor="@color/gray_600"
                         android:layout_marginBottom="24dp" />
 
-                    <!-- Full Name -->
+                    <!-- PF Number -->
                     <com.google.android.material.textfield.TextInputLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
-                        app:boxBackgroundMode="filled"
-                        app:boxBackgroundColor="@color/gray_50"
-                        app:boxCornerRadiusTopStart="12dp"
-                        app:boxCornerRadiusTopEnd="12dp"
-                        app:boxCornerRadiusBottomStart="12dp"
-                        app:boxCornerRadiusBottomEnd="12dp"
-                        app:startIconDrawable="@drawable/ic_person_modern"
-                        app:startIconTint="@color/green_600"
-                        style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_full_name"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:hint="Full Name"
-                            android:inputType="textPersonName"
-                            android:textSize="16sp" />
-
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                    <!-- Employee ID -->
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
+                        android:layout_marginBottom="12dp"
                         app:boxBackgroundMode="filled"
                         app:boxBackgroundColor="@color/gray_50"
                         app:boxCornerRadiusTopStart="12dp"
@@ -130,87 +126,44 @@
                         app:boxCornerRadiusBottomEnd="12dp"
                         app:startIconDrawable="@drawable/ic_badge_modern"
                         app:startIconTint="@color/green_600"
-                        app:helperText="e.g., EMP001, STAFF123"
+                        app:helperText="Enter your company PF Number"
                         app:helperTextTextColor="@color/gray_500"
                         style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox">
 
                         <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_employee_id"
+                            android:id="@+id/et_pf_number"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:hint="Employee ID"
-                            android:inputType="text"
-                            android:textSize="16sp" />
+                            android:hint="PF Number"
+                            android:inputType="textCapCharacters|textNoSuggestions"
+                            android:textSize="16sp"
+                            android:maxLines="1"
+                            android:imeOptions="actionNext" />
 
                     </com.google.android.material.textfield.TextInputLayout>
 
-                    <!-- Email -->
-                    <com.google.android.material.textfield.TextInputLayout
+                    <!-- Employee Info Display -->
+                    <LinearLayout
+                        android:id="@+id/ll_employee_info"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
-                        app:boxBackgroundMode="filled"
-                        app:boxBackgroundColor="@color/gray_50"
-                        app:boxCornerRadiusTopStart="12dp"
-                        app:boxCornerRadiusTopEnd="12dp"
-                        app:boxCornerRadiusBottomStart="12dp"
-                        app:boxCornerRadiusBottomEnd="12dp"
-                        app:startIconDrawable="@drawable/ic_email_modern"
-                        app:startIconTint="@color/green_600"
-                        style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox">
+                        android:orientation="vertical"
+                        android:visibility="gone"
+                        android:layout_marginBottom="16dp">
 
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_email"
+                        <TextView
+                            android:id="@+id/tv_employee_info"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:hint="Email Address"
-                            android:inputType="textEmailAddress"
-                            android:textSize="16sp" />
+                            android:padding="16dp"
+                            android:textSize="14sp"
+                            android:lineSpacingExtra="2dp"
+                            android:background="@drawable/info_background_green"
+                            android:drawablePadding="8dp"
+                            android:gravity="start|center_vertical"
+                            android:textColor="@color/green_800" />
 
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                    <!-- Department -->
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Department"
-                        android:textSize="14sp"
-                        android:textColor="@color/gray_700"
-                        android:textStyle="bold"
-                        android:layout_marginBottom="8dp" />
-
-                    <Spinner
-                        android:id="@+id/sp_department"
-                        android:layout_width="match_parent"
-                        android:layout_height="56dp"
-                        android:layout_marginBottom="16dp"
-                        android:background="@drawable/spinner_background_modern"
-                        android:paddingHorizontal="16dp" />
-
-                    <!-- Phone -->
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
-                        app:boxBackgroundMode="filled"
-                        app:boxBackgroundColor="@color/gray_50"
-                        app:boxCornerRadiusTopStart="12dp"
-                        app:boxCornerRadiusTopEnd="12dp"
-                        app:boxCornerRadiusBottomStart="12dp"
-                        app:boxCornerRadiusBottomEnd="12dp"
-                        app:startIconDrawable="@drawable/ic_phone_modern"
-                        app:startIconTint="@color/green_600"
-                        style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_phone"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:hint="Phone Number"
-                            android:inputType="phone"
-                            android:textSize="16sp" />
-
-                    </com.google.android.material.textfield.TextInputLayout>
+                    </LinearLayout>
 
                     <!-- Password -->
                     <com.google.android.material.textfield.TextInputLayout
@@ -235,9 +188,11 @@
                             android:id="@+id/et_password"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:hint="Password"
+                            android:hint="Create Password"
                             android:inputType="textPassword"
-                            android:textSize="16sp" />
+                            android:textSize="16sp"
+                            android:maxLines="1"
+                            android:imeOptions="actionNext" />
 
                     </com.google.android.material.textfield.TextInputLayout>
 
@@ -245,7 +200,7 @@
                     <com.google.android.material.textfield.TextInputLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="24dp"
+                        android:layout_marginBottom="8dp"
                         app:boxBackgroundMode="filled"
                         app:boxBackgroundColor="@color/gray_50"
                         app:boxCornerRadiusTopStart="12dp"
@@ -262,32 +217,36 @@
                             android:layout_height="wrap_content"
                             android:hint="Confirm Password"
                             android:inputType="textPassword"
-                            android:textSize="16sp" />
+                            android:textSize="16sp"
+                            android:maxLines="1"
+                            android:imeOptions="actionDone" />
 
                     </com.google.android.material.textfield.TextInputLayout>
 
-                    <!-- Terms Checkbox -->
+                    <!-- Password Requirements Info -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="top"
+                        android:orientation="vertical"
+                        android:padding="12dp"
+                        android:background="@drawable/info_background_blue"
                         android:layout_marginBottom="24dp">
 
-                        <com.google.android.material.checkbox.MaterialCheckBox
-                            android:id="@+id/cb_terms"
+                        <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            app:buttonTint="@color/green_600"
-                            android:layout_marginEnd="8dp" />
+                            android:text="Password Requirements:"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/blue_800"
+                            android:layout_marginBottom="4dp" />
 
                         <TextView
-                            android:layout_width="0dp"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="I agree to the Terms of Service and Privacy Policy"
-                            android:textSize="14sp"
-                            android:textColor="@color/gray_700"
+                            android:text="• At least 6 characters long\n• Contains both letters and numbers\n• Remember this password for future logins"
+                            android:textSize="11sp"
+                            android:textColor="@color/blue_700"
                             android:lineSpacingExtra="2dp" />
 
                     </LinearLayout>
@@ -297,13 +256,14 @@
                         android:id="@+id/btn_register"
                         android:layout_width="match_parent"
                         android:layout_height="56dp"
-                        android:text="Create Account"
+                        android:text="Set Up Password"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textAllCaps="false"
                         app:cornerRadius="12dp"
                         app:backgroundTint="@color/green_600"
                         app:elevation="4dp"
+                        android:enabled="false"
                         android:layout_marginBottom="16dp" />
 
                     <!-- Progress Bar -->
@@ -316,6 +276,13 @@
                         android:indeterminateTint="@color/green_600"
                         android:layout_marginBottom="16dp" />
 
+                    <!-- Divider -->
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/gray_200"
+                        android:layout_marginVertical="16dp" />
+
                     <!-- Login Link -->
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -326,7 +293,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Already have an account? "
+                            android:text="Already have a password? "
                             android:textSize="15sp"
                             android:textColor="@color/gray_600" />
 
@@ -334,7 +301,7 @@
                             android:id="@+id/tv_login"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Sign in"
+                            android:text="Sign in here"
                             android:textSize="15sp"
                             android:textColor="@color/green_600"
                             android:textStyle="bold"

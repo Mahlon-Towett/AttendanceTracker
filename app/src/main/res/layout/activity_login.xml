@@ -22,16 +22,6 @@
             android:alpha="0.1"
             android:background="@drawable/circle_white" />
 
-        <View
-            android:layout_width="150dp"
-            android:layout_height="150dp"
-            android:layout_alignParentBottom="true"
-            android:layout_alignParentStart="true"
-            android:layout_marginBottom="-75dp"
-            android:layout_marginStart="-75dp"
-            android:alpha="0.1"
-            android:background="@drawable/circle_white" />
-
         <!-- Main content -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -69,7 +59,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Smart Attendance Management"
+                    android:text="Employee Access Portal"
                     android:textSize="16sp"
                     android:textColor="@color/white"
                     android:alpha="0.9"
@@ -96,7 +86,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
-                        android:text="Welcome Back!"
+                        android:text="Employee Sign In"
                         android:textSize="24sp"
                         android:textStyle="bold"
                         android:textColor="@color/gray_900"
@@ -106,12 +96,12 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
-                        android:text="Sign in to continue"
+                        android:text="Enter your PF Number and password"
                         android:textSize="16sp"
                         android:textColor="@color/gray_600"
                         android:layout_marginBottom="32dp" />
 
-                    <!-- Email Input -->
+                    <!-- PF Number Input -->
                     <com.google.android.material.textfield.TextInputLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -122,16 +112,16 @@
                         app:boxCornerRadiusTopEnd="12dp"
                         app:boxCornerRadiusBottomStart="12dp"
                         app:boxCornerRadiusBottomEnd="12dp"
-                        app:startIconDrawable="@drawable/ic_email_modern"
+                        app:startIconDrawable="@drawable/ic_badge_modern"
                         app:startIconTint="@color/blue_600"
                         style="@style/Widget.MaterialComponents.TextInputLayout.FilledBox">
 
                         <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_email"
+                            android:id="@+id/et_pf_number"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:hint="Email Address"
-                            android:inputType="textEmailAddress"
+                            android:hint="PF Number"
+                            android:inputType="textCapCharacters|textNoSuggestions"
                             android:textSize="16sp"
                             android:fontFamily="sans-serif" />
 
@@ -141,7 +131,7 @@
                     <com.google.android.material.textfield.TextInputLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="24dp"
+                        android:layout_marginBottom="32dp"
                         app:boxBackgroundMode="filled"
                         app:boxBackgroundColor="@color/gray_50"
                         app:boxCornerRadiusTopStart="12dp"
@@ -165,44 +155,7 @@
 
                     </com.google.android.material.textfield.TextInputLayout>
 
-                    <!-- Remember Me and Forgot Password -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:layout_marginBottom="32dp">
-
-                        <com.google.android.material.checkbox.MaterialCheckBox
-                            android:id="@+id/cb_remember_me"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Remember me"
-                            android:textSize="14sp"
-                            android:textColor="@color/gray_700"
-                            app:buttonTint="@color/blue_600" />
-
-                        <View
-                            android:layout_width="0dp"
-                            android:layout_height="1dp"
-                            android:layout_weight="1" />
-
-                        <TextView
-                            android:id="@+id/tv_forgot_password"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Forgot password?"
-                            android:textSize="14sp"
-                            android:textColor="@color/blue_600"
-                            android:textStyle="bold"
-                            android:clickable="true"
-                            android:focusable="true"
-                            android:background="@drawable/ripple_effect"
-                            android:padding="8dp" />
-
-                    </LinearLayout>
-
-                    <!-- Email Login Button -->
+                    <!-- Login Button -->
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_login"
                         android:layout_width="match_parent"
@@ -214,57 +167,6 @@
                         app:cornerRadius="12dp"
                         app:backgroundTint="@color/blue_600"
                         app:elevation="4dp"
-                        android:layout_marginBottom="16dp" />
-
-                    <!-- Divider -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:layout_marginBottom="16dp">
-
-                        <View
-                            android:layout_width="0dp"
-                            android:layout_height="1dp"
-                            android:layout_weight="1"
-                            android:background="@color/gray_300" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="OR"
-                            android:textSize="14sp"
-                            android:textColor="@color/gray_500"
-                            android:textStyle="bold"
-                            android:paddingHorizontal="16dp" />
-
-                        <View
-                            android:layout_width="0dp"
-                            android:layout_height="1dp"
-                            android:layout_weight="1"
-                            android:background="@color/gray_300" />
-
-                    </LinearLayout>
-
-                    <!-- Google Login Button -->
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_google_login"
-                        android:layout_width="match_parent"
-                        android:layout_height="56dp"
-                        android:text="Continue with Google"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textAllCaps="false"
-                        android:textColor="@color/gray_700"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        app:cornerRadius="12dp"
-                        app:strokeColor="@color/gray_300"
-                        app:strokeWidth="2dp"
-                        app:icon="@drawable/ic_google"
-                        app:iconTint="@null"
-                        app:iconGravity="textStart"
-                        app:iconPadding="12dp"
                         android:layout_marginBottom="24dp" />
 
                     <!-- Progress Bar -->
@@ -287,7 +189,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Don't have an account? "
+                            android:text="First time? "
                             android:textSize="15sp"
                             android:textColor="@color/gray_600" />
 
@@ -295,7 +197,7 @@
                             android:id="@+id/tv_register"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Sign up"
+                            android:text="Set up your password"
                             android:textSize="15sp"
                             android:textColor="@color/blue_600"
                             android:textStyle="bold"

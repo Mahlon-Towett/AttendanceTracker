@@ -4,17 +4,17 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/background_secondary">
+    android:background="@color/gray_50">
 
-    <!-- Custom Header -->
+    <!-- Enhanced Header with Gradient -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@drawable/employee_gradient_background"
         android:orientation="vertical"
-        android:paddingTop="24dp"
-        android:paddingBottom="32dp"
-        android:elevation="8dp">
+        android:paddingTop="32dp"
+        android:paddingBottom="40dp"
+        android:elevation="12dp">
 
         <!-- Status bar spacer -->
         <View
@@ -36,31 +36,73 @@
                 android:orientation="vertical">
 
                 <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Employee Dashboard"
-                    android:textSize="24sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/white"
-                    android:layout_marginBottom="4dp" />
-
-                <TextView
                     android:id="@+id/tv_welcome"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Welcome, Employee!"
-                    android:textSize="16sp"
+                    android:text="Good Morning!"
+                    android:textSize="26sp"
+                    android:textStyle="bold"
                     android:textColor="@color/white"
-                    android:alpha="0.9" />
+                    android:layout_marginBottom="6dp"
+                    android:fontFamily="sans-serif-medium" />
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="4dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="👤"
+                        android:textSize="16sp"
+                        android:layout_marginEnd="6dp" />
+
+                    <TextView
+                        android:id="@+id/tv_employee_id"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="PF: Loading..."
+                        android:textSize="16sp"
+                        android:textColor="@color/white"
+                        android:alpha="0.9"
+                        android:fontFamily="sans-serif" />
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🏢"
+                        android:textSize="14sp"
+                        android:layout_marginEnd="6dp" />
+
+                    <TextView
+                        android:id="@+id/tv_department"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Loading..."
+                        android:textSize="15sp"
+                        android:textColor="@color/white"
+                        android:alpha="0.85"
+                        android:fontFamily="sans-serif" />
+
+                </LinearLayout>
 
             </LinearLayout>
 
-            <ImageView
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@drawable/ic_menu"
+            <View
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:background="@drawable/header_button_background"
-                android:padding="8dp"
                 android:clickable="true"
                 android:focusable="true" />
 
@@ -71,75 +113,26 @@
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:padding="16dp">
+        android:padding="20dp"
+        android:scrollbarStyle="outsideOverlay">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- Employee Info Card -->
+            <!-- Location Status Card - Enhanced -->
             <androidx.cardview.widget.CardView
+                android:id="@+id/cv_location_status"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="20dp"
-                app:cardElevation="8dp"
-                app:cardBackgroundColor="@color/white"
-                android:layout_marginBottom="20dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:padding="24dp"
-                    android:gravity="center_vertical">
-
-                    <!-- Profile Picture -->
-                    <View
-                        android:layout_width="64dp"
-                        android:layout_height="64dp"
-                        android:background="@drawable/circle_background"
-                        android:layout_marginEnd="20dp" />
-
-                    <!-- Employee Details -->
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:id="@+id/tv_employee_id"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Loading..."
-                            android:textSize="18sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"
-                            android:layout_marginBottom="4dp" />
-
-                        <TextView
-                            android:id="@+id/tv_department"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Loading..."
-                            android:textSize="16sp"
-                            android:textColor="@color/text_secondary" />
-
-                    </LinearLayout>
-
-                </LinearLayout>
-
-            </androidx.cardview.widget.CardView>
-
-            <!-- Today's Status Card -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardCornerRadius="20dp"
-                app:cardElevation="8dp"
-                app:cardBackgroundColor="@color/white"
-                android:layout_marginBottom="20dp">
+                app:cardCornerRadius="24dp"
+                app:cardElevation="12dp"
+                app:cardBackgroundColor="@color/blue_50"
+                android:layout_marginBottom="20dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?android:attr/selectableItemBackground">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -147,21 +140,141 @@
                     android:orientation="vertical"
                     android:padding="24dp">
 
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="16dp">
+
+                        <View
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:background="@drawable/location_icon_background"
+                            android:layout_marginEnd="16dp" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Location Status"
+                                android:textSize="20sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/text_primary"
+                                android:layout_marginBottom="4dp" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Tap to refresh location"
+                                android:textSize="13sp"
+                                android:textColor="@color/blue_600"
+                                android:alpha="0.8" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
                     <TextView
+                        android:id="@+id/tv_location_status"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Today's Status"
-                        android:textSize="20sp"
+                        android:text="Checking location..."
+                        android:textSize="18sp"
                         android:textStyle="bold"
-                        android:textColor="@color/text_primary"
-                        android:layout_marginBottom="16dp" />
+                        android:textColor="@color/blue_700"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:id="@+id/tv_distance_from_office"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="-- from office"
+                        android:textSize="15sp"
+                        android:textColor="@color/text_secondary" />
+
+                </LinearLayout>
+
+            </androidx.cardview.widget.CardView>
+
+            <!-- Today's Attendance Card - Enhanced -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/cv_attendance"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="24dp"
+                app:cardElevation="12dp"
+                app:cardBackgroundColor="@color/white"
+                android:layout_marginBottom="20dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?android:attr/selectableItemBackground">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="24dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="20dp">
+
+                        <View
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:background="@drawable/attendance_icon_background"
+                            android:layout_marginEnd="16dp" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Today's Attendance"
+                                android:textSize="20sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/text_primary"
+                                android:layout_marginBottom="4dp" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Tap to Clock In/Out"
+                                android:textSize="13sp"
+                                android:textColor="@color/green_600"
+                                android:alpha="0.8" />
+
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="→"
+                            android:textSize="24sp"
+                            android:textColor="@color/green_600"
+                            android:textStyle="bold" />
+
+                    </LinearLayout>
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal">
 
-                        <!-- Clock In Status -->
+                        <!-- Clock In -->
                         <LinearLayout
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
@@ -169,31 +282,36 @@
                             android:orientation="vertical"
                             android:gravity="center"
                             android:padding="16dp"
-                            android:background="@drawable/status_card_background">
+                            android:background="@drawable/attendance_status_card"
+                            android:layout_marginEnd="8dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="🟢"
+                                android:textSize="20sp"
+                                android:layout_marginBottom="6dp" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Clock In"
-                                android:textSize="14sp"
+                                android:textSize="12sp"
                                 android:textColor="@color/text_secondary"
-                                android:layout_marginBottom="8dp" />
+                                android:layout_marginBottom="4dp" />
 
                             <TextView
+                                android:id="@+id/tv_clock_in_time"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="--:--"
-                                android:textSize="18sp"
+                                android:textSize="16sp"
                                 android:textStyle="bold"
                                 android:textColor="@color/green_600" />
 
                         </LinearLayout>
 
-                        <View
-                            android:layout_width="16dp"
-                            android:layout_height="1dp" />
-
-                        <!-- Clock Out Status -->
+                        <!-- Clock Out -->
                         <LinearLayout
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
@@ -201,23 +319,69 @@
                             android:orientation="vertical"
                             android:gravity="center"
                             android:padding="16dp"
-                            android:background="@drawable/status_card_background">
+                            android:background="@drawable/attendance_status_card"
+                            android:layout_marginHorizontal="4dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="🔴"
+                                android:textSize="20sp"
+                                android:layout_marginBottom="6dp" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Clock Out"
-                                android:textSize="14sp"
+                                android:textSize="12sp"
                                 android:textColor="@color/text_secondary"
-                                android:layout_marginBottom="8dp" />
+                                android:layout_marginBottom="4dp" />
+
+                            <TextView
+                                android:id="@+id/tv_clock_out_time"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="--:--"
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/orange_600" />
+
+                        </LinearLayout>
+
+                        <!-- Hours Worked -->
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center"
+                            android:padding="16dp"
+                            android:background="@drawable/attendance_status_card"
+                            android:layout_marginStart="8dp">
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="--:--"
-                                android:textSize="18sp"
+                                android:text="⏱️"
+                                android:textSize="20sp"
+                                android:layout_marginBottom="6dp" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Hours"
+                                android:textSize="12sp"
+                                android:textColor="@color/text_secondary"
+                                android:layout_marginBottom="4dp" />
+
+                            <TextView
+                                android:id="@+id/tv_hours_worked"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0h 0m"
+                                android:textSize="16sp"
                                 android:textStyle="bold"
-                                android:textColor="@color/orange_600" />
+                                android:textColor="@color/blue_600" />
 
                         </LinearLayout>
 
@@ -227,13 +391,17 @@
 
             </androidx.cardview.widget.CardView>
 
-            <!-- Quick Actions Card -->
+            <!-- Weekly Stats Card - Enhanced -->
             <androidx.cardview.widget.CardView
+                android:id="@+id/cv_weekly_stats"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="20dp"
-                app:cardElevation="8dp"
-                app:cardBackgroundColor="@color/white">
+                app:cardCornerRadius="24dp"
+                app:cardElevation="12dp"
+                app:cardBackgroundColor="@color/white"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?android:attr/selectableItemBackground">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -241,52 +409,126 @@
                     android:orientation="vertical"
                     android:padding="24dp">
 
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Quick Actions"
-                        android:textSize="20sp"
-                        android:textStyle="bold"
-                        android:textColor="@color/text_primary"
-                        android:layout_marginBottom="20dp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="20dp">
 
-                    <!-- Action buttons -->
-                    <com.google.android.material.button.MaterialButton
-                        android:layout_width="match_parent"
-                        android:layout_height="60dp"
-                        android:text="📍 Clock In/Out"
-                        android:textSize="18sp"
-                        android:textAllCaps="false"
-                        android:textColor="@color/white"
-                        app:cornerRadius="16dp"
-                        android:backgroundTint="@color/green_600"
-                        app:elevation="4dp"
-                        android:layout_marginBottom="12dp" />
+                        <View
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:background="@drawable/stats_icon_background"
+                            android:layout_marginEnd="16dp" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:layout_width="match_parent"
-                        android:layout_height="56dp"
-                        android:text="📊 View My Attendance"
-                        android:textSize="16sp"
-                        android:textAllCaps="false"
-                        android:textColor="@color/blue_600"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        app:strokeColor="@color/blue_600"
-                        app:strokeWidth="2dp"
-                        app:cornerRadius="12dp"
-                        android:layout_marginBottom="12dp" />
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
 
-                    <com.google.android.material.button.MaterialButton
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="This Week"
+                                android:textSize="20sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/text_primary"
+                                android:layout_marginBottom="4dp" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Weekly summary"
+                                android:textSize="13sp"
+                                android:textColor="@color/purple_600"
+                                android:alpha="0.8" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                    <LinearLayout
                         android:layout_width="match_parent"
-                        android:layout_height="56dp"
-                        android:text="⚙️ Profile Settings"
-                        android:textSize="16sp"
-                        android:textAllCaps="false"
-                        android:textColor="@color/purple_600"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        app:strokeColor="@color/purple_600"
-                        app:strokeWidth="2dp"
-                        app:cornerRadius="12dp" />
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <!-- Weekly Hours -->
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center"
+                            android:padding="16dp"
+                            android:background="@drawable/weekly_stats_card"
+                            android:layout_marginEnd="12dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="📊"
+                                android:textSize="24sp"
+                                android:layout_marginBottom="8dp" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Total Hours"
+                                android:textSize="12sp"
+                                android:textColor="@color/text_secondary"
+                                android:layout_marginBottom="6dp" />
+
+                            <TextView
+                                android:id="@+id/tv_weekly_hours"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0h 0m"
+                                android:textSize="18sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/purple_600" />
+
+                        </LinearLayout>
+
+                        <!-- Attendance Days -->
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center"
+                            android:padding="16dp"
+                            android:background="@drawable/weekly_stats_card"
+                            android:layout_marginStart="12dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="🏆"
+                                android:textSize="24sp"
+                                android:layout_marginBottom="8dp" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Days Present"
+                                android:textSize="12sp"
+                                android:textColor="@color/text_secondary"
+                                android:layout_marginBottom="6dp" />
+
+                            <TextView
+                                android:id="@+id/tv_attendance_streak"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0 days"
+                                android:textSize="18sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/green_600" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
 
                 </LinearLayout>
 

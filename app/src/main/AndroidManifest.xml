@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-
     <!-- Firebase and Network permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
         android:allowBackup="true"
@@ -16,7 +17,9 @@
         android:supportsRtl="true"
         android:theme="@style/Base.Theme.AttendanceBeta"
         tools:targetApi="31">
-
+        <activity
+            android:name=".AttendanceActivity"
+            android:exported="false" />
         <!-- Splash Screen Activity (Entry Point) -->
         <activity
             android:name=".SplashActivity"
@@ -24,43 +27,33 @@
             android:theme="@style/Theme.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
-
-        <!-- Login Activity -->
+        </activity> <!-- Login Activity -->
         <activity
             android:name=".LoginActivity"
             android:exported="false"
-            android:windowSoftInputMode="adjustResize"
-            android:screenOrientation="portrait" />
-
-        <!-- Registration Activity -->
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize" /> <!-- Registration Activity -->
         <activity
             android:name=".RegistrationActivity"
             android:exported="false"
-            android:windowSoftInputMode="adjustResize"
-            android:screenOrientation="portrait" />
-
-        <!-- Admin Dashboard Activity -->
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize" /> <!-- Admin Dashboard Activity -->
         <activity
             android:name=".AdminDashboardActivity"
             android:exported="false"
             android:launchMode="singleTop"
-            android:screenOrientation="portrait" />
-
-        <!-- Employee Dashboard Activity -->
+            android:screenOrientation="portrait" /> <!-- Employee Dashboard Activity -->
         <activity
             android:name=".EmployeeDashboardActivity"
             android:exported="false"
             android:launchMode="singleTop"
-            android:screenOrientation="portrait" />
-
-        <!-- Google Sign-In Configuration -->
+            android:screenOrientation="portrait" /> <!-- Google Play Services Version -->
         <meta-data
             android:name="com.google.android.gms.version"
             android:value="@integer/google_play_services_version" />
-
     </application>
 
 </manifest>
