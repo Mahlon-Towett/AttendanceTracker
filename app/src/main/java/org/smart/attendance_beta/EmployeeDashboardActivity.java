@@ -3,7 +3,6 @@ package org.smart.attendance_beta;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.location.Location;
 import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
@@ -20,16 +19,12 @@ import androidx.core.app.ActivityCompat;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.tasks.OnCompleteListener;
-import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.Query;
-import com.google.firebase.firestore.QuerySnapshot;
 
-import org.smart.attendance_beta.services.FCMService;
+import org.smart.attendance_beta.notifications.AttendanceNotificationManager;
 import org.smart.attendance_beta.utils.DateTimeUtils;
 import org.smart.attendance_beta.utils.LocationUtils;
 import org.smart.attendance_beta.utils.WeeklyAttendanceUtils;
@@ -68,7 +63,6 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_employee_dashboard);
-        FCMService.initializeFCM(this);
         // Initialize Firebase
         mAuth = FirebaseAuth.getInstance();
         db = FirebaseFirestore.getInstance();
@@ -617,6 +611,9 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
                 .setTitle("Logout")
                 .setMessage("Are you sure you want to logout?")
                 .setPositiveButton("Yes", (dialog, which) -> {
+                    // Cancel all scheduled notifications before logout
+                    AttendanceNotificationManager.cancelAllReminders(this);
+
                     // Clear stored data
                     getSharedPreferences("attendance_prefs", MODE_PRIVATE)
                             .edit()

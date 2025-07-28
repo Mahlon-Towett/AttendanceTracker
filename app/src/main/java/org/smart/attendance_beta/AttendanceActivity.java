@@ -1,4 +1,4 @@
-// Enhanced AttendanceActivity.java with device security and session management
+// Modified AttendanceActivity.java with simple device session management
 package org.smart.attendance_beta;
 
 import android.Manifest;
@@ -6,7 +6,6 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.os.Bundle;
 import android.os.Handler;
-import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -25,19 +24,15 @@ import androidx.core.app.ActivityCompat;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.tasks.OnCompleteListener;
-import com.google.android.gms.tasks.Task;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.QuerySnapshot;
-import com.google.firebase.firestore.WriteBatch;
 
-import org.smart.attendance_beta.models.AttendanceRecord;
 import org.smart.attendance_beta.utils.DateTimeUtils;
+import org.smart.attendance_beta.utils.DeviceSecurityUtils;
 import org.smart.attendance_beta.utils.LocationUtils;
 import org.smart.attendance_beta.utils.TimeSecurityUtils;
-import org.smart.attendance_beta.utils.DeviceSecurityUtils;
 
+import java.text.DecimalFormat;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -69,11 +64,10 @@ public class AttendanceActivity extends AppCompatActivity {
     private String workStartTime = "08:00";
     private String workEndTime = "17:00";
 
-    // Security
+    // Device Security
     private boolean isTimeValid = false;
     private boolean isDeviceValid = false;
     private String deviceId;
-    private String activeSessionId = null;
     private TimeSecurityUtils.TimeValidationResult lastTimeValidation;
 
     // Handlers
@@ -81,15 +75,13 @@ public class AttendanceActivity extends AppCompatActivity {
     private Runnable locationUpdateRunnable;
     private Handler timeUpdateHandler = new Handler();
     private Runnable timeUpdateRunnable;
-    private Handler sessionValidationHandler = new Handler();
-    private Runnable sessionValidationRunnable;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_attendance);
 
-        // Initialize security
+        // Initialize device ID
         deviceId = DeviceSecurityUtils.getDeviceId(this);
 
         // Setup toolbar
@@ -107,7 +99,7 @@ public class AttendanceActivity extends AppCompatActivity {
 
         // Security validations
         validateDeviceTime();
-        validateDeviceSession();
+        checkDeviceSession();
 
         // Load data
         loadCompanyLocation();
@@ -116,7 +108,6 @@ public class AttendanceActivity extends AppCompatActivity {
         // Start updates
         startTimeUpdates();
         startLocationUpdates();
-        startSessionValidation();
 
         // Setup click listeners
         setupClickListeners();
@@ -134,194 +125,89 @@ public class AttendanceActivity extends AppCompatActivity {
     }
 
     /**
-     * SECURITY: Validate device session to prevent multi-device abuse
+     * Check if this device can be used for attendance (prevent multi-device abuse)
      */
-    private void validateDeviceSession() {
+    private void checkDeviceSession() {
         if (employeeDocId == null) return;
 
         String today = DateTimeUtils.getCurrentDate();
+        updateDeviceValidationUI(false, "Validating device session...");
 
-        // Check if employee has an active session on a different device
+        // Check if employee has an active attendance session on another device
         db.collection("attendance")
                 .whereEqualTo("employeeDocId", employeeDocId)
                 .whereEqualTo("date", today)
                 .whereEqualTo("sessionActive", true)
                 .get()
                 .addOnCompleteListener(task -> {
-                    if (task.isSuccessful() && !task.getResult().isEmpty()) {
-                        DocumentSnapshot activeSession = task.getResult().getDocuments().get(0);
-                        String sessionDeviceId = activeSession.getString("deviceId");
-                        String sessionId = activeSession.getId();
-
-                        if (sessionDeviceId != null && !sessionDeviceId.equals(deviceId)) {
-                            // Another device has an active session
-                            handleDeviceConflict(sessionId, sessionDeviceId);
-                        } else if (sessionDeviceId != null && sessionDeviceId.equals(deviceId)) {
-                            // This device has the active session
-                            activeSessionId = sessionId;
+                    if (task.isSuccessful()) {
+                        if (task.getResult().isEmpty()) {
+                            // No active session - device is valid
                             isDeviceValid = true;
                             updateDeviceValidationUI(true, "Device authorized ✅");
                         } else {
-                            // No device conflict, but check if this device can create a session
-                            isDeviceValid = true;
-                            updateDeviceValidationUI(true, "Ready to clock in ✅");
-                        }
-                    } else {
-                        // No active session found
-                        isDeviceValid = true;
-                        updateDeviceValidationUI(true, "Ready to clock in ✅");
-                    }
-                    updateButtonStates();
-                });
-    }
+                            // Active session found - check if it's on this device
+                            DocumentSnapshot activeSession = task.getResult().getDocuments().get(0);
+                            String sessionDeviceId = activeSession.getString("deviceId");
 
-    /**
-     * Handle device conflict when employee tries to use different device
-     */
-    private void handleDeviceConflict(String conflictSessionId, String conflictDeviceId) {
-        isDeviceValid = false;
-        updateDeviceValidationUI(false, "Another device is active ❌");
-
-        new AlertDialog.Builder(this)
-                .setTitle("🚫 Device Conflict Detected")
-                .setMessage("You are already clocked in from another device today.\n\n" +
-                        "Active Device ID: " + conflictDeviceId.substring(0, 8) + "...\n" +
-                        "Current Device ID: " + deviceId.substring(0, 8) + "...\n\n" +
-                        "To prevent attendance fraud:\n" +
-                        "• Only one device can be used per day\n" +
-                        "• Clock out from the original device first\n" +
-                        "• Contact admin if you lost your device")
-                .setPositiveButton("Contact Admin", (dialog, which) -> {
-                    // Create admin notification about device conflict
-                    reportDeviceConflict(conflictSessionId, conflictDeviceId);
-                    Toast.makeText(this, "Admin has been notified about device conflict",
-                            Toast.LENGTH_LONG).show();
-                })
-                .setNegativeButton("Exit", (dialog, which) -> {
-                    finish();
-                })
-                .setCancelable(false)
-                .show();
-    }
-
-    /**
-     * Report device conflict to admin
-     */
-    private void reportDeviceConflict(String conflictSessionId, String conflictDeviceId) {
-        Map<String, Object> conflictReport = new HashMap<>();
-        conflictReport.put("type", "DEVICE_CONFLICT");
-        conflictReport.put("employeeDocId", employeeDocId);
-        conflictReport.put("employeeName", employeeName);
-        conflictReport.put("pfNumber", pfNumber);
-        conflictReport.put("originalDeviceId", conflictDeviceId);
-        conflictReport.put("attemptedDeviceId", deviceId);
-        conflictReport.put("originalSessionId", conflictSessionId);
-        conflictReport.put("attemptTime", com.google.firebase.Timestamp.now());
-        conflictReport.put("date", DateTimeUtils.getCurrentDate());
-        conflictReport.put("resolved", false);
-        conflictReport.put("severity", "HIGH");
-
-        db.collection("security_alerts")
-                .add(conflictReport)
-                .addOnSuccessListener(documentReference -> {
-                    // Also update the original session with conflict info
-                    Map<String, Object> sessionUpdate = new HashMap<>();
-                    sessionUpdate.put("hasDeviceConflict", true);
-                    sessionUpdate.put("conflictDeviceId", deviceId);
-                    sessionUpdate.put("conflictTime", com.google.firebase.Timestamp.now());
-                    sessionUpdate.put("securityAlertId", documentReference.getId());
-
-                    db.collection("attendance").document(conflictSessionId)
-                            .update(sessionUpdate);
-                });
-    }
-
-    /**
-     * Start periodic session validation to detect session hijacking
-     */
-    private void startSessionValidation() {
-        sessionValidationRunnable = new Runnable() {
-            @Override
-            public void run() {
-                if (activeSessionId != null && isClockedIn) {
-                    validateActiveSession();
-                }
-                sessionValidationHandler.postDelayed(this, 30000); // Every 30 seconds
-            }
-        };
-        sessionValidationHandler.post(sessionValidationRunnable);
-    }
-
-    /**
-     * Validate that the current session is still valid
-     */
-    private void validateActiveSession() {
-        if (activeSessionId == null) return;
-
-        db.collection("attendance").document(activeSessionId)
-                .get()
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        DocumentSnapshot session = task.getResult();
-                        if (session.exists()) {
-                            Boolean sessionActive = session.getBoolean("sessionActive");
-                            String sessionDeviceId = session.getString("deviceId");
-                            Boolean hasConflict = session.getBoolean("hasDeviceConflict");
-
-                            if (sessionActive == null || !sessionActive ||
-                                    !deviceId.equals(sessionDeviceId) ||
-                                    (hasConflict != null && hasConflict)) {
-
-                                // Session has been invalidated
-                                handleSessionInvalidated();
+                            if (deviceId.equals(sessionDeviceId)) {
+                                // Same device - valid
+                                isDeviceValid = true;
+                                todayAttendanceDocId = activeSession.getId();
+                                isClockedIn = true;
+                                updateDeviceValidationUI(true, "Device session active ✅");
                             } else {
-                                // Update session heartbeat
-                                updateSessionHeartbeat();
+                                // Different device - block access
+                                isDeviceValid = false;
+                                String activeDeviceInfo = getActiveDeviceInfo(activeSession);
+                                updateDeviceValidationUI(false, "Another device is active ❌");
+                                showDeviceConflictDialog(activeDeviceInfo, activeSession);
                             }
-                        } else {
-                            handleSessionInvalidated();
                         }
+                        updateButtonStates();
+                    } else {
+                        isDeviceValid = false;
+                        updateDeviceValidationUI(false, "Device validation failed ❌");
+                        updateButtonStates();
+                        Toast.makeText(this, "Error checking device session: " + task.getException().getMessage(),
+                                Toast.LENGTH_SHORT).show();
                     }
                 });
     }
 
     /**
-     * Handle when session is invalidated (possibly by admin or device conflict)
+     * Get display info for the active device
      */
-    private void handleSessionInvalidated() {
-        isClockedIn = false;
-        isDeviceValid = false;
-        activeSessionId = null;
+    private String getActiveDeviceInfo(DocumentSnapshot session) {
+        String deviceModel = session.getString("deviceModel");
+        String deviceManufacturer = session.getString("deviceManufacturer");
+        String clockInTime = session.getString("clockInTime");
 
-        updateDeviceValidationUI(false, "Session invalidated ❌");
-        updateButtonStates();
-
-        new AlertDialog.Builder(this)
-                .setTitle("⚠️ Session Invalidated")
-                .setMessage("Your attendance session has been invalidated. This may be due to:\n\n" +
-                        "• Admin intervention\n" +
-                        "• Security violation detected\n" +
-                        "• System maintenance\n\n" +
-                        "Please contact your supervisor.")
-                .setPositiveButton("OK", (dialog, which) -> {
-                    finish();
-                })
-                .setCancelable(false)
-                .show();
+        if (deviceModel != null && deviceManufacturer != null) {
+            return deviceManufacturer + " " + deviceModel +
+                    (clockInTime != null ? " (clocked in at " + DateTimeUtils.formatTimeForDisplay(clockInTime) + ")" : "");
+        } else {
+            return "Unknown device" +
+                    (clockInTime != null ? " (clocked in at " + DateTimeUtils.formatTimeForDisplay(clockInTime) + ")" : "");
+        }
     }
 
     /**
-     * Update session heartbeat to show device is still active
+     * Show dialog when device conflict is detected
      */
-    private void updateSessionHeartbeat() {
-        if (activeSessionId == null) return;
-
-        Map<String, Object> heartbeat = new HashMap<>();
-        heartbeat.put("lastHeartbeat", com.google.firebase.Timestamp.now());
-        heartbeat.put("heartbeatDeviceId", deviceId);
-
-        db.collection("attendance").document(activeSessionId)
-                .update(heartbeat);
+    private void showDeviceConflictDialog(String activeDeviceInfo, DocumentSnapshot activeSession) {
+        new AlertDialog.Builder(this)
+                .setTitle("🚫 Device Already Active")
+                .setMessage("You are already clocked in from another device:\n\n" +
+                        "Active Device: " + activeDeviceInfo + "\n" +
+                        "Current Device: " + DeviceSecurityUtils.getDeviceModel() + "\n\n" +
+                        "To prevent attendance fraud, only one device can be used per day. " +
+                        "Please clock out from your original device first.")
+                .setPositiveButton("OK", (dialog, which) -> {
+                    finish(); // Close this activity
+                })
+                .setCancelable(false)
+                .show();
     }
 
     /**
@@ -345,7 +231,7 @@ public class AttendanceActivity extends AppCompatActivity {
     }
 
     /**
-     * SECURITY: Validate device time against server time
+     * Validate device time against server time
      */
     private void validateDeviceTime() {
         TimeSecurityUtils.validateDeviceTime(this, new TimeSecurityUtils.TimeValidationCallback() {
@@ -420,14 +306,14 @@ public class AttendanceActivity extends AppCompatActivity {
         tvClockOutTime = findViewById(R.id.tv_clock_out_time);
         tvHoursWorked = findViewById(R.id.tv_hours_worked);
         tvTimeValidationStatus = findViewById(R.id.tv_time_validation_status);
-        tvDeviceStatus = findViewById(R.id.tv_device_status); // Add this to layout
+        tvDeviceStatus = findViewById(R.id.tv_device_status);
         btnClockIn = findViewById(R.id.btn_clock_in);
         btnClockOut = findViewById(R.id.btn_clock_out);
         progressBar = findViewById(R.id.progress_bar);
         cvLocationInfo = findViewById(R.id.cv_location_info);
         cvAttendanceInfo = findViewById(R.id.cv_attendance_info);
         cvTimeValidation = findViewById(R.id.cv_time_validation);
-        cvDeviceValidation = findViewById(R.id.cv_device_validation); // Add this to layout
+        cvDeviceValidation = findViewById(R.id.cv_device_validation);
 
         setDefaultValues();
     }
@@ -453,101 +339,385 @@ public class AttendanceActivity extends AppCompatActivity {
         btnClockOut.setVisibility(View.GONE);
     }
 
-    // ... (continue with other methods like loadCompanyLocation, loadTodayAttendance, etc.)
-    // The key changes are in clock in/out methods:
+    private void loadCompanyLocation() {
+        db.collection("locations").document("company-main")
+                .get()
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        DocumentSnapshot document = task.getResult();
+                        if (document.exists()) {
+                            Double lat = document.getDouble("latitude");
+                            Double lng = document.getDouble("longitude");
+                            Long radius = document.getLong("radius");
 
-    /**
-     * SECURITY: Enhanced clock-in with device session management
-     */
-    private void performSecureClockIn(double latitude, double longitude) {
+                            if (lat != null) companyLatitude = lat;
+                            if (lng != null) companyLongitude = lng;
+                            if (radius != null) companyRadius = radius.intValue();
+                        }
+                    }
+                });
+    }
+    private void loadTodayAttendance() {
+        if (employeeDocId == null) return;
+
         String today = DateTimeUtils.getCurrentDate();
 
-        // SECURITY: Create secure timestamp with validation data
-        TimeSecurityUtils.AttendanceTimestamp secureTimestamp =
-                TimeSecurityUtils.createSecureTimestamp(this);
-
-        if (!secureTimestamp.isValid()) {
-            setLoading(false);
-            Toast.makeText(this, "Clock-in denied: Time validation failed", Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        // SECURITY: Check for existing active sessions one more time
+        // Load attendance for this specific device only
         db.collection("attendance")
                 .whereEqualTo("employeeDocId", employeeDocId)
                 .whereEqualTo("date", today)
-                .whereEqualTo("sessionActive", true)
-                .whereNotEqualTo("deviceId", deviceId)
+                .whereEqualTo("deviceId", deviceId) // Only this device
                 .get()
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful() && !task.getResult().isEmpty()) {
-                        setLoading(false);
-                        Toast.makeText(this, "Cannot clock in: Another device session is active",
-                                Toast.LENGTH_LONG).show();
-                        return;
-                    }
+                        DocumentSnapshot attendance = task.getResult().getDocuments().get(0);
+                        todayAttendanceDocId = attendance.getId();
 
-                    // Proceed with clock-in
-                    createAttendanceRecord(today, latitude, longitude, secureTimestamp);
+                        String clockInTime = attendance.getString("clockInTime");
+                        String clockOutTime = attendance.getString("clockOutTime");
+                        Boolean sessionActive = attendance.getBoolean("sessionActive");
+
+                        if (clockInTime != null) {
+                            tvClockInTime.setText(DateTimeUtils.formatTimeForDisplay(clockInTime));
+
+                            if (sessionActive != null && sessionActive && clockOutTime == null) {
+                                isClockedIn = true;
+                                tvTodayStatus.setText("Clocked In ✅");
+                                btnClockIn.setVisibility(View.GONE);
+                                btnClockOut.setVisibility(View.VISIBLE);
+                            } else if (clockOutTime != null) {
+                                isClockedIn = false;
+                                tvTodayStatus.setText("Work Complete ✅");
+                                tvClockOutTime.setText(DateTimeUtils.formatTimeForDisplay(clockOutTime));
+
+                                double hours = DateTimeUtils.calculateHoursWorked(clockInTime, clockOutTime);
+                                tvHoursWorked.setText(DateTimeUtils.formatHoursWorked(hours));
+
+                                btnClockIn.setVisibility(View.GONE);
+                                btnClockOut.setVisibility(View.GONE);
+                            }
+                        }
+                    } else {
+                        tvTodayStatus.setText("Ready to Clock In");
+                        btnClockIn.setVisibility(View.VISIBLE);
+                        btnClockOut.setVisibility(View.GONE);
+                    }
+                    updateButtonStates();
                 });
     }
 
-    private void createAttendanceRecord(String today, double latitude, double longitude,
-                                        TimeSecurityUtils.AttendanceTimestamp secureTimestamp) {
+    private void startTimeUpdates() {
+        timeUpdateRunnable = new Runnable() {
+            @Override
+            public void run() {
+                tvCurrentTime.setText(DateTimeUtils.getCurrentDisplayTime());
 
-        AttendanceRecord record = new AttendanceRecord(
-                employeeDocId, pfNumber, employeeName, today,
-                latitude, longitude, "Company Office"
-        );
+                if (isClockedIn && !tvClockInTime.getText().toString().equals("--:--")) {
+                    String clockInTime = tvClockInTime.getText().toString() + ":00";
+                    String currentTime = DateTimeUtils.getCurrentTime();
+                    double hours = DateTimeUtils.calculateHoursWorked(clockInTime, currentTime);
+                    tvHoursWorked.setText(DateTimeUtils.formatHoursWorked(hours) + " (ongoing)");
+                }
+
+                timeUpdateHandler.postDelayed(this, 1000);
+            }
+        };
+        timeUpdateHandler.post(timeUpdateRunnable);
+    }
+
+    private void startLocationUpdates() {
+        if (!LocationUtils.hasLocationPermissions(this)) {
+            requestLocationPermissions();
+            return;
+        }
+
+        locationUpdateRunnable = new Runnable() {
+            @Override
+            public void run() {
+                updateLocation();
+                locationUpdateHandler.postDelayed(this, 10000);
+            }
+        };
+        locationUpdateHandler.post(locationUpdateRunnable);
+    }
+
+    private void requestLocationPermissions() {
+        ActivityCompat.requestPermissions(this,
+                new String[]{
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                },
+                LOCATION_PERMISSION_REQUEST_CODE);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                startLocationUpdates();
+            } else {
+                tvLocationStatus.setText("Location permission required");
+                tvDistanceFromOffice.setText("Enable location to use attendance");
+            }
+        }
+    }
+
+    private void updateLocation() {
+        if (!LocationUtils.hasLocationPermissions(this)) {
+            return;
+        }
+
+        fusedLocationClient.getLastLocation()
+                .addOnSuccessListener(this, location -> {
+                    if (location != null) {
+                        double distance = LocationUtils.calculateDistance(
+                                location.getLatitude(), location.getLongitude(),
+                                companyLatitude, companyLongitude
+                        );
+
+                        updateLocationUI(distance);
+                        updateButtonStates();
+                    } else {
+                        tvLocationStatus.setText("Unable to get location");
+                        tvDistanceFromOffice.setText("Check GPS settings");
+                        updateButtonStates();
+                    }
+                })
+                .addOnFailureListener(this, e -> {
+                    tvLocationStatus.setText("Location error");
+                    tvDistanceFromOffice.setText("Please check GPS");
+                    updateButtonStates();
+                });
+    }
+
+    private void updateLocationUI(double distance) {
+        DecimalFormat df = new DecimalFormat("#.#");
+        tvDistanceFromOffice.setText(LocationUtils.formatDistance(distance) + " from office");
+
+        String status = LocationUtils.getLocationStatus(distance, companyRadius);
+        tvLocationStatus.setText(status);
+
+        if (distance <= companyRadius) {
+            cvLocationInfo.setCardBackgroundColor(getResources().getColor(R.color.green_50));
+        } else if (distance <= companyRadius + 100) {
+            cvLocationInfo.setCardBackgroundColor(getResources().getColor(R.color.orange_50));
+        } else {
+            cvLocationInfo.setCardBackgroundColor(getResources().getColor(R.color.red_50));
+        }
+    }
+
+    /**
+     * Enhanced button state validation including device validation
+     */
+    private void updateButtonStates() {
+        // SECURITY CHECK: Disable buttons if time or device is not valid
+        if (!isTimeValid || !isDeviceValid) {
+            btnClockIn.setEnabled(false);
+            btnClockOut.setEnabled(false);
+            return;
+        }
+
+        if (!LocationUtils.hasLocationPermissions(this)) {
+            btnClockIn.setEnabled(false);
+            btnClockOut.setEnabled(false);
+            return;
+        }
+
+        fusedLocationClient.getLastLocation()
+                .addOnSuccessListener(location -> {
+                    if (location != null) {
+                        double distance = LocationUtils.calculateDistance(
+                                location.getLatitude(), location.getLongitude(),
+                                companyLatitude, companyLongitude
+                        );
+
+                        boolean inRange = distance <= companyRadius;
+
+                        if (isClockedIn) {
+                            btnClockOut.setEnabled(inRange);
+                            btnClockIn.setEnabled(false);
+                        } else {
+                            btnClockIn.setEnabled(inRange);
+                            btnClockOut.setEnabled(false);
+                        }
+                    } else {
+                        btnClockIn.setEnabled(false);
+                        btnClockOut.setEnabled(false);
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    btnClockIn.setEnabled(false);
+                    btnClockOut.setEnabled(false);
+                });
+    }
+
+    private void setupClickListeners() {
+        btnClockIn.setOnClickListener(v -> {
+            if (!isTimeValid || !isDeviceValid) {
+                Toast.makeText(this, "Security validation failed. Cannot clock in.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            clockIn();
+        });
+
+        btnClockOut.setOnClickListener(v -> {
+            if (!isTimeValid || !isDeviceValid) {
+                Toast.makeText(this, "Security validation failed. Cannot clock out.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (isEarlyClockOut()) {
+                showEarlyClockOutDialog();
+            } else {
+                clockOut(null);
+            }
+        });
+
+        cvLocationInfo.setOnClickListener(v -> {
+            updateLocation();
+            Toast.makeText(this, "Location updated", Toast.LENGTH_SHORT).show();
+        });
+
+        if (cvTimeValidation != null) {
+            cvTimeValidation.setOnClickListener(v -> {
+                validateDeviceTime();
+                Toast.makeText(this, "Time validation refreshed", Toast.LENGTH_SHORT).show();
+            });
+        }
+
+        if (cvDeviceValidation != null) {
+            cvDeviceValidation.setOnClickListener(v -> {
+                checkDeviceSession();
+                Toast.makeText(this, "Device validation refreshed", Toast.LENGTH_SHORT).show();
+            });
+        }
+    }
+
+    private boolean isEarlyClockOut() {
+        String currentTime = DateTimeUtils.getCurrentTime();
+        try {
+            java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
+            java.util.Date current = timeFormat.parse(currentTime);
+            java.util.Date workEnd = timeFormat.parse(workEndTime + ":00");
+
+            return current.before(workEnd);
+        } catch (java.text.ParseException e) {
+            return false;
+        }
+    }
+
+    private void showEarlyClockOutDialog() {
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_early_clockout, null);
+        EditText etReason = dialogView.findViewById(R.id.et_reason);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Early Clock Out")
+                .setMessage("You're clocking out before " + workEndTime + ". Please provide a reason:")
+                .setView(dialogView)
+                .setPositiveButton("Clock Out", (dialog, which) -> {
+                    String reason = etReason.getText().toString().trim();
+                    if (TextUtils.isEmpty(reason)) {
+                        Toast.makeText(this, "Please provide a reason for early clock out", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    clockOut(reason);
+                })
+                .setNegativeButton("Cancel", null)
+                .setCancelable(false)
+                .show();
+    }
+
+    /**
+     * Clock in with device session management
+     */
+    private void clockIn() {
+        if (!LocationUtils.hasLocationPermissions(this)) {
+            requestLocationPermissions();
+            return;
+        }
+
+        setLoading(true);
+
+        fusedLocationClient.getLastLocation()
+                .addOnSuccessListener(location -> {
+                    if (location != null) {
+                        double distance = LocationUtils.calculateDistance(
+                                location.getLatitude(), location.getLongitude(),
+                                companyLatitude, companyLongitude
+                        );
+
+                        if (distance <= companyRadius) {
+                            performClockIn(location.getLatitude(), location.getLongitude());
+                        } else {
+                            setLoading(false);
+                            Toast.makeText(this, "You're too far from the office to clock in",
+                                    Toast.LENGTH_LONG).show();
+                        }
+                    } else {
+                        setLoading(false);
+                        Toast.makeText(this, "Unable to get location. Please try again.",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    setLoading(false);
+                    Toast.makeText(this, "Location error: " + e.getMessage(),
+                            Toast.LENGTH_SHORT).show();
+                });
+    }
+
+    /**
+     * Perform clock in with device tracking
+     */
+    private void performClockIn(double latitude, double longitude) {
+        String today = DateTimeUtils.getCurrentDate();
+        String currentTime = DateTimeUtils.getCurrentTime();
 
         // Check if employee is late
-        String currentTime = DateTimeUtils.getCurrentTime();
         boolean isLate = DateTimeUtils.isLateArrival(currentTime, workStartTime);
         int lateMinutes = isLate ? DateTimeUtils.calculateLateMinutes(currentTime, workStartTime) : 0;
 
-        // SECURITY: Enhanced attendance data with device and time validation
+        // Create attendance record with device information
         Map<String, Object> attendanceData = new HashMap<>();
-        attendanceData.put("employeeDocId", record.getEmployeeDocId());
-        attendanceData.put("pfNumber", record.getPfNumber());
-        attendanceData.put("employeeName", record.getEmployeeName());
-        attendanceData.put("date", record.getDate());
-        attendanceData.put("clockInTime", record.getClockInTime());
-        attendanceData.put("clockInTimestamp", record.getClockInTimestamp());
-        attendanceData.put("clockInLatitude", record.getClockInLatitude());
-        attendanceData.put("clockInLongitude", record.getClockInLongitude());
-        attendanceData.put("locationName", record.getLocationName());
+        attendanceData.put("employeeDocId", employeeDocId);
+        attendanceData.put("pfNumber", pfNumber);
+        attendanceData.put("employeeName", employeeName);
+        attendanceData.put("date", today);
+        attendanceData.put("clockInTime", currentTime);
+        attendanceData.put("clockInTimestamp", com.google.firebase.Timestamp.now());
+        attendanceData.put("clockInLatitude", latitude);
+        attendanceData.put("clockInLongitude", longitude);
+        attendanceData.put("locationName", "Company Office");
         attendanceData.put("status", isLate ? "Late" : "Present");
-        attendanceData.put("totalHours", record.getTotalHours());
+        attendanceData.put("totalHours", 0.0);
         attendanceData.put("isLate", isLate);
         attendanceData.put("lateMinutes", lateMinutes);
-        attendanceData.put("createdAt", record.getCreatedAt());
+        attendanceData.put("createdAt", com.google.firebase.Timestamp.now());
 
-        // SECURITY: Add device session management
+        // Device session management
         attendanceData.put("deviceId", deviceId);
         attendanceData.put("deviceModel", DeviceSecurityUtils.getDeviceModel());
         attendanceData.put("deviceManufacturer", DeviceSecurityUtils.getDeviceManufacturer());
         attendanceData.put("sessionActive", true);
         attendanceData.put("sessionStartTime", com.google.firebase.Timestamp.now());
-        attendanceData.put("lastHeartbeat", com.google.firebase.Timestamp.now());
-        attendanceData.put("hasDeviceConflict", false);
 
-        // SECURITY: Add time validation data
-        attendanceData.put("deviceTime", secureTimestamp.deviceTime);
-        attendanceData.put("serverTime", secureTimestamp.serverTime);
-        attendanceData.put("timeZone", secureTimestamp.timeZone);
-        attendanceData.put("autoTimeEnabled", secureTimestamp.autoTimeEnabled);
-        attendanceData.put("timeValidationMethod", lastTimeValidation != null ? lastTimeValidation.validationMethod : "UNKNOWN");
-        attendanceData.put("timeDifferenceMs", lastTimeValidation != null ? lastTimeValidation.timeDifferenceMs : 0);
+        // Time security validation
+        if (lastTimeValidation != null) {
+            attendanceData.put("timeValidationMethod", lastTimeValidation.validationMethod);
+            attendanceData.put("timeDifferenceMs", lastTimeValidation.timeDifferenceMs);
+            attendanceData.put("autoTimeEnabled", TimeSecurityUtils.isAutomaticTimeEnabled(this));
+        }
 
         db.collection("attendance")
                 .add(attendanceData)
                 .addOnSuccessListener(documentReference -> {
                     setLoading(false);
                     todayAttendanceDocId = documentReference.getId();
-                    activeSessionId = documentReference.getId();
                     isClockedIn = true;
 
-                    tvClockInTime.setText(DateTimeUtils.formatTimeForDisplay(record.getClockInTime()));
+                    tvClockInTime.setText(DateTimeUtils.formatTimeForDisplay(currentTime));
 
                     if (isLate) {
                         tvTodayStatus.setText("Clocked In (Late) ⚠️");
@@ -570,44 +740,114 @@ public class AttendanceActivity extends AppCompatActivity {
     }
 
     /**
-     * SECURITY: Enhanced clock-out with session termination
+     * Clock out with session termination
      */
-    private void performSecureClockOut(double latitude, double longitude, String earlyClockOutReason) {
-        // ... existing clock-out logic ...
+    private void clockOut(String earlyClockOutReason) {
+        if (!LocationUtils.hasLocationPermissions(this) || todayAttendanceDocId == null) {
+            Toast.makeText(this, "Cannot clock out: No active session", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-        // SECURITY: Add session termination to updates
+        setLoading(true);
+
+        fusedLocationClient.getLastLocation()
+                .addOnSuccessListener(location -> {
+                    if (location != null) {
+                        double distance = LocationUtils.calculateDistance(
+                                location.getLatitude(), location.getLongitude(),
+                                companyLatitude, companyLongitude
+                        );
+
+                        if (distance <= companyRadius) {
+                            performClockOut(location.getLatitude(), location.getLongitude(), earlyClockOutReason);
+                        } else {
+                            setLoading(false);
+                            Toast.makeText(this, "You're too far from the office to clock out",
+                                    Toast.LENGTH_LONG).show();
+                        }
+                    } else {
+                        setLoading(false);
+                        Toast.makeText(this, "Unable to get location. Please try again.",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    setLoading(false);
+                    Toast.makeText(this, "Location error: " + e.getMessage(),
+                            Toast.LENGTH_SHORT).show();
+                });
+    }
+
+    /**
+     * Perform clock out with session termination
+     */
+    private void performClockOut(double latitude, double longitude, String earlyClockOutReason) {
+        String currentTime = DateTimeUtils.getCurrentTime();
+
+        // Get clock in time to calculate hours worked
+        String clockInTime = tvClockInTime.getText().toString() + ":00";
+        double hoursWorked = DateTimeUtils.calculateHoursWorked(clockInTime, currentTime);
+
         Map<String, Object> updates = new HashMap<>();
-        updates.put("clockOutTime", DateTimeUtils.getCurrentTime());
+        updates.put("clockOutTime", currentTime);
         updates.put("clockOutTimestamp", com.google.firebase.Timestamp.now());
-        updates.put("sessionActive", false);
+        updates.put("clockOutLatitude", latitude);
+        updates.put("clockOutLongitude", longitude);
+        updates.put("totalHours", hoursWorked);
+        updates.put("sessionActive", false); // Terminate session
         updates.put("sessionEndTime", com.google.firebase.Timestamp.now());
-        updates.put("sessionDuration", System.currentTimeMillis() - (lastTimeValidation != null ? lastTimeValidation.deviceTime : 0));
 
-        // ... rest of clock-out updates ...
+        if (earlyClockOutReason != null && !earlyClockOutReason.isEmpty()) {
+            updates.put("earlyClockOutReason", earlyClockOutReason);
+            updates.put("isEarlyClockOut", true);
+            updates.put("earlyClockOutTime", workEndTime);
+        }
 
         db.collection("attendance").document(todayAttendanceDocId)
                 .update(updates)
                 .addOnSuccessListener(aVoid -> {
                     setLoading(false);
                     isClockedIn = false;
-                    activeSessionId = null;
 
-                    // ... rest of success handling ...
+                    tvClockOutTime.setText(DateTimeUtils.formatTimeForDisplay(currentTime));
+                    tvHoursWorked.setText(DateTimeUtils.formatHoursWorked(hoursWorked));
+
+                    if (earlyClockOutReason != null) {
+                        tvTodayStatus.setText("Early Clock Out ⚠️");
+                        Toast.makeText(this, "Clocked out early! Total hours: " +
+                                        DateTimeUtils.formatHoursWorked(hoursWorked) + ". Reason logged for admin review.",
+                                Toast.LENGTH_LONG).show();
+                    } else {
+                        tvTodayStatus.setText("Work Complete ✅");
+                        Toast.makeText(this, "Successfully clocked out! Total hours: " +
+                                DateTimeUtils.formatHoursWorked(hoursWorked), Toast.LENGTH_LONG).show();
+                    }
+
+                    btnClockIn.setVisibility(View.GONE);
+                    btnClockOut.setVisibility(View.GONE);
+                })
+                .addOnFailureListener(e -> {
+                    setLoading(false);
+                    Toast.makeText(this, "Failed to clock out: " + e.getMessage(),
+                            Toast.LENGTH_LONG).show();
                 });
     }
 
-    /**
-     * SECURITY: Enhanced button state validation including device validation
-     */
-    private void updateButtonStates() {
-        // SECURITY CHECK: Disable buttons if time or device is not valid
-        if (!isTimeValid || !isDeviceValid) {
+    private void setLoading(boolean isLoading) {
+        if (isLoading) {
+            progressBar.setVisibility(View.VISIBLE);
             btnClockIn.setEnabled(false);
             btnClockOut.setEnabled(false);
-            return;
+        } else {
+            progressBar.setVisibility(View.GONE);
+            updateButtonStates();
         }
+    }
 
-        // ... rest of existing button state logic ...
+    @Override
+    public boolean onSupportNavigateUp() {
+        onBackPressed();
+        return true;
     }
 
     @Override
@@ -619,16 +859,13 @@ public class AttendanceActivity extends AppCompatActivity {
         if (timeUpdateHandler != null && timeUpdateRunnable != null) {
             timeUpdateHandler.removeCallbacks(timeUpdateRunnable);
         }
-        if (sessionValidationHandler != null && sessionValidationRunnable != null) {
-            sessionValidationHandler.removeCallbacks(sessionValidationRunnable);
-        }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        // SECURITY: Re-validate everything when app resumes
+        // Re-validate device session when app resumes
+        checkDeviceSession();
         validateDeviceTime();
-        validateDeviceSession();
     }
 }

@@ -1,8 +1,10 @@
+// Modified LoginActivity.java with device session checking
 package org.smart.attendance_beta;
 
 import android.content.Intent;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -11,6 +13,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.gms.tasks.OnCompleteListener;
@@ -20,6 +23,10 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
+
+import org.smart.attendance_beta.notifications.AttendanceNotificationManager;
+import org.smart.attendance_beta.utils.DateTimeUtils;
+import org.smart.attendance_beta.utils.DeviceSecurityUtils;
 
 public class LoginActivity extends AppCompatActivity {
 
@@ -31,10 +38,16 @@ public class LoginActivity extends AppCompatActivity {
     private FirebaseAuth mAuth;
     private FirebaseFirestore db;
 
+    // Device session management
+    private String deviceId;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
+
+        // Initialize device ID
+        deviceId = DeviceSecurityUtils.getDeviceId(this);
 
         // Initialize Firebase Auth and Firestore
         mAuth = FirebaseAuth.getInstance();
@@ -44,13 +57,13 @@ public class LoginActivity extends AppCompatActivity {
         initViews();
         setupClickListeners();
 
-        // FIXED: Only check if user is already logged in if we're not doing auto_login
+        // Check if user is already logged in (but not auto-login from splash)
         boolean autoLogin = getIntent().getBooleanExtra("auto_login", false);
         if (!autoLogin) {
             FirebaseUser currentUser = mAuth.getCurrentUser();
             if (currentUser != null) {
-                // User is already logged in, check their role
-                checkUserRoleAndRedirect();
+                // User is already logged in, check their role and device session
+                checkUserRoleAndDeviceSession();
             }
         }
     }
@@ -108,10 +121,11 @@ public class LoginActivity extends AppCompatActivity {
                         // Employee found, get their details
                         DocumentSnapshot employeeDoc = task.getResult().getDocuments().get(0);
                         String email = employeeDoc.getString("email");
+                        String employeeDocId = employeeDoc.getId();
 
                         if (email != null) {
-                            // Authenticate with Firebase Auth using generated email
-                            authenticateWithFirebase(email, password, employeeDoc.getId(), employeeDoc);
+                            // Check device session before authenticating
+                            checkDeviceSessionBeforeLogin(employeeDocId, email, password, employeeDoc);
                         } else {
                             setLoading(false);
                             Toast.makeText(LoginActivity.this,
@@ -133,6 +147,109 @@ public class LoginActivity extends AppCompatActivity {
                 });
     }
 
+    /**
+     * Check if employee has an active session on another device before allowing login
+     */
+    private void checkDeviceSessionBeforeLogin(String employeeDocId, String email, String password, DocumentSnapshot employeeDoc) {
+        String today = DateTimeUtils.getCurrentDate();
+
+        // Check if employee has an active attendance session on another device
+        db.collection("attendance")
+                .whereEqualTo("employeeDocId", employeeDocId)
+                .whereEqualTo("date", today)
+                .whereEqualTo("sessionActive", true)
+                .get()
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        if (task.getResult().isEmpty()) {
+                            // No active session - can proceed with login
+                            authenticateWithFirebase(email, password, employeeDocId, employeeDoc);
+                        } else {
+                            // Active session found - check if it's on this device
+                            DocumentSnapshot activeSession = task.getResult().getDocuments().get(0);
+                            String sessionDeviceId = activeSession.getString("deviceId");
+
+                            if (deviceId.equals(sessionDeviceId)) {
+                                // Same device - can proceed with login
+                                authenticateWithFirebase(email, password, employeeDocId, employeeDoc);
+                            } else {
+                                // Different device - show device conflict dialog
+                                setLoading(false);
+                                showDeviceConflictDialog(activeSession, employeeDoc);
+                            }
+                        }
+                    } else {
+                        // Error checking session - allow login but log the error
+                        Toast.makeText(this, "Warning: Could not verify device session", Toast.LENGTH_SHORT).show();
+                        authenticateWithFirebase(email, password, employeeDocId, employeeDoc);
+                    }
+                });
+    }
+
+    /**
+     * Show dialog when user tries to login while clocked in on another device
+     */
+    private void showDeviceConflictDialog(DocumentSnapshot activeSession, DocumentSnapshot employeeDoc) {
+        String employeeName = employeeDoc.getString("name");
+        String activeDeviceInfo = getActiveDeviceInfo(activeSession);
+        String clockInTime = activeSession.getString("clockInTime");
+
+        String message = "You are currently clocked in from another device:\n\n" +
+                "Active Device: " + activeDeviceInfo + "\n" +
+                "Clock In Time: " + (clockInTime != null ? DateTimeUtils.formatTimeForDisplay(clockInTime) : "Unknown") + "\n" +
+                "Current Device: " + DeviceSecurityUtils.getDeviceManufacturer() + " " + DeviceSecurityUtils.getDeviceModel() + "\n\n" +
+                "To prevent attendance fraud, you must clock out from your original device before logging in on a new device.\n\n" +
+                "What would you like to do?";
+
+        new AlertDialog.Builder(this)
+                .setTitle("🚫 Device Session Active")
+                .setMessage(message)
+                .setPositiveButton("Contact Admin", (dialog, which) -> {
+                    // Option to contact admin for help
+                    showContactAdminDialog();
+                })
+                .setNegativeButton("Try Different Account", (dialog, which) -> {
+                    // Clear form and let them try different account
+                    etPfNumber.setText("");
+                    etPassword.setText("");
+                    etPfNumber.requestFocus();
+                })
+                .setNeutralButton("Cancel", null)
+                .setCancelable(false)
+                .show();
+    }
+
+    /**
+     * Show contact admin dialog
+     */
+    private void showContactAdminDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("📞 Contact Administrator")
+                .setMessage("If you've lost your original device or need help resolving this issue, please contact your administrator.\n\n" +
+                        "Provide them with:\n" +
+                        "• Your PF Number\n" +
+                        "• Current device information\n" +
+                        "• Reason for device change\n\n" +
+                        "They can resolve device conflicts from the admin panel.")
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    /**
+     * Get display info for the active device
+     */
+    private String getActiveDeviceInfo(DocumentSnapshot session) {
+        String deviceModel = session.getString("deviceModel");
+        String deviceManufacturer = session.getString("deviceManufacturer");
+
+        if (deviceModel != null && deviceManufacturer != null) {
+            return deviceManufacturer + " " + deviceModel;
+        } else {
+            String deviceId = session.getString("deviceId");
+            return "Unknown device" + (deviceId != null ? " (" + deviceId.substring(0, 8) + "...)" : "");
+        }
+    }
+
     private void authenticateWithFirebase(String email, String password, String employeeDocId, DocumentSnapshot employeeDoc) {
         mAuth.signInWithEmailAndPassword(email, password)
                 .addOnCompleteListener(this, new OnCompleteListener<AuthResult>() {
@@ -144,7 +261,7 @@ public class LoginActivity extends AppCompatActivity {
                             // Sign in success
                             FirebaseUser user = mAuth.getCurrentUser();
                             if (user != null) {
-                                // FIXED: Store employee data immediately after successful login
+                                // Store employee data immediately after successful login
                                 storeEmployeeData(employeeDocId, employeeDoc);
 
                                 // Small delay to ensure data is stored
@@ -170,11 +287,11 @@ public class LoginActivity extends AppCompatActivity {
     }
 
     /**
-     * FIXED: Store employee data immediately after login
+     * Store employee data immediately after login
      */
     private void storeEmployeeData(String employeeDocId, DocumentSnapshot employeeDoc) {
         try {
-            // Store employee document ID for future use
+            // Store employee document ID and device info for session management
             getSharedPreferences("attendance_prefs", MODE_PRIVATE)
                     .edit()
                     .putString("employee_doc_id", employeeDocId)
@@ -183,47 +300,121 @@ public class LoginActivity extends AppCompatActivity {
                     .putString("employee_email", employeeDoc.getString("email"))
                     .putString("employee_department", employeeDoc.getString("department"))
                     .putString("employee_role", employeeDoc.getString("role"))
+                    .putString("device_id", deviceId) // Store device ID for session tracking
+                    .putLong("login_timestamp", System.currentTimeMillis())
                     .apply();
         } catch (Exception e) {
-            // If storing fails, at least store the essential employee doc ID
+            // If storing fails, at least store the essential employee doc ID and device ID
             getSharedPreferences("attendance_prefs", MODE_PRIVATE)
                     .edit()
                     .putString("employee_doc_id", employeeDocId)
+                    .putString("device_id", deviceId)
                     .apply();
         }
     }
-
     /**
-     * FIXED: Check user role with employee document data
+     * Check user role and device session for already logged in users
      */
-    private void checkUserRoleAndRedirect() {
+    private void checkUserRoleAndDeviceSession() {
         // Get stored employee doc ID
         String employeeDocId = getSharedPreferences("attendance_prefs", MODE_PRIVATE)
                 .getString("employee_doc_id", null);
 
         if (employeeDocId != null) {
-            // Load employee data and redirect
-            db.collection("employees").document(employeeDocId)
-                    .get()
-                    .addOnCompleteListener(task -> {
-                        if (task.isSuccessful()) {
-                            DocumentSnapshot document = task.getResult();
-                            if (document.exists()) {
-                                checkUserRoleAndRedirect(document);
-                            } else {
-                                // Employee document not found, redirect to login
-                                clearStoredData();
-                                Toast.makeText(this, "Employee record not found. Please login again.", Toast.LENGTH_LONG).show();
-                            }
-                        } else {
-                            // Error loading employee data
-                            Toast.makeText(this, "Error loading employee data. Please try again.", Toast.LENGTH_LONG).show();
-                        }
-                    });
+            // Check device session for already logged in user
+            checkDeviceSessionForExistingUser(employeeDocId);
         } else {
             // No stored employee data, user needs to login
             Toast.makeText(this, "Please login to continue.", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /**
+     * Check device session for user who is already logged in (from previous session)
+     */
+    private void checkDeviceSessionForExistingUser(String employeeDocId) {
+        String today = DateTimeUtils.getCurrentDate();
+
+        // Check if employee has an active attendance session on another device
+        db.collection("attendance")
+                .whereEqualTo("employeeDocId", employeeDocId)
+                .whereEqualTo("date", today)
+                .whereEqualTo("sessionActive", true)
+                .get()
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        if (task.getResult().isEmpty()) {
+                            // No active session - can proceed to dashboard
+                            loadEmployeeAndRedirect(employeeDocId);
+                        } else {
+                            // Active session found - check if it's on this device
+                            DocumentSnapshot activeSession = task.getResult().getDocuments().get(0);
+                            String sessionDeviceId = activeSession.getString("deviceId");
+
+                            if (deviceId.equals(sessionDeviceId)) {
+                                // Same device - can proceed to dashboard
+                                loadEmployeeAndRedirect(employeeDocId);
+                            } else {
+                                // Different device - force logout and show message
+                                forceLogoutDueToDeviceConflict(activeSession);
+                            }
+                        }
+                    } else {
+                        // Error checking session - allow access but log the error
+                        loadEmployeeAndRedirect(employeeDocId);
+                    }
+                });
+    }
+
+    /**
+     * Force logout when device conflict is detected for existing session
+     */
+    private void forceLogoutDueToDeviceConflict(DocumentSnapshot activeSession) {
+        // Clear stored data
+        clearStoredData();
+
+        // Sign out from Firebase
+        mAuth.signOut();
+
+        String activeDeviceInfo = getActiveDeviceInfo(activeSession);
+        String clockInTime = activeSession.getString("clockInTime");
+
+        new AlertDialog.Builder(this)
+                .setTitle("🔒 Session Terminated")
+                .setMessage("Your session has been terminated because you are currently clocked in from another device:\n\n" +
+                        "Active Device: " + activeDeviceInfo + "\n" +
+                        "Clock In Time: " + (clockInTime != null ? DateTimeUtils.formatTimeForDisplay(clockInTime) : "Unknown") + "\n\n" +
+                        "Please clock out from your original device before using this device.")
+                .setPositiveButton("Login Again", (dialog, which) -> {
+                    // Allow them to login manually
+                    etPfNumber.requestFocus();
+                })
+                .setCancelable(false)
+                .show();
+    }
+
+    /**
+     * Load employee data and redirect to appropriate dashboard
+     */
+    private void loadEmployeeAndRedirect(String employeeDocId) {
+        db.collection("employees").document(employeeDocId)
+                .get()
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        DocumentSnapshot document = task.getResult();
+                        if (document.exists()) {
+                            checkUserRoleAndRedirect(document);
+                        } else {
+                            // Employee document not found, clear data and force login
+                            clearStoredData();
+                            mAuth.signOut();
+                            Toast.makeText(this, "Employee record not found. Please login again.", Toast.LENGTH_LONG).show();
+                        }
+                    } else {
+                        // Error loading employee data
+                        Toast.makeText(this, "Error loading employee data. Please try again.", Toast.LENGTH_LONG).show();
+                    }
+                });
     }
 
     private void checkUserRoleAndRedirect(DocumentSnapshot employeeDoc) {
@@ -251,6 +442,9 @@ public class LoginActivity extends AppCompatActivity {
     }
 
     private void redirectToAdminDashboard() {
+        // Admins don't need attendance notifications, but setup channel anyway
+        AttendanceNotificationManager.setupNotificationChannel(this);
+
         Intent intent = new Intent(LoginActivity.this, AdminDashboardActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         startActivity(intent);
@@ -258,6 +452,9 @@ public class LoginActivity extends AppCompatActivity {
     }
 
     private void redirectToEmployeeDashboard() {
+        // Setup notifications for logged in employee
+        setupNotificationsAfterLogin();
+
         Intent intent = new Intent(LoginActivity.this, EmployeeDashboardActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         startActivity(intent);
@@ -285,14 +482,14 @@ public class LoginActivity extends AppCompatActivity {
     protected void onStart() {
         super.onStart();
 
-        // FIXED: Only auto-check if user is signed in when not coming from splash
+        // Check if user should be auto-logged in when coming from splash
         boolean autoLogin = getIntent().getBooleanExtra("auto_login", false);
         if (autoLogin) {
             // Coming from splash screen, check if user should be auto-logged in
             FirebaseUser currentUser = mAuth.getCurrentUser();
             if (currentUser != null) {
                 setLoading(true);
-                checkUserRoleAndRedirect();
+                checkUserRoleAndDeviceSession();
             }
         }
     }
@@ -307,5 +504,111 @@ public class LoginActivity extends AppCompatActivity {
 
         // Stop loading if it was running
         setLoading(false);
+    }
+
+    /**
+     * Handle device session validation for auto-login scenarios
+     */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+
+        // If this is an auto-login request, check device session
+        boolean autoLogin = intent.getBooleanExtra("auto_login", false);
+        if (autoLogin) {
+            FirebaseUser currentUser = mAuth.getCurrentUser();
+            if (currentUser != null) {
+                checkUserRoleAndDeviceSession();
+            }
+        }
+    }
+
+    /**
+     * Override back button to prevent going back to splash
+     */
+    @Override
+    public void onBackPressed() {
+        // Exit app instead of going back to splash
+        super.onBackPressed();
+        finishAffinity();
+    }
+
+    /**
+     * Handle the case where user logs out from dashboard and returns to login
+     */
+    public void handleLogoutReturn() {
+        // Clear any stored session data
+        clearStoredData();
+
+        // Clear form fields
+        etPfNumber.setText("");
+        etPassword.setText("");
+
+        // Focus on PF Number field
+        etPfNumber.requestFocus();
+
+        // Show message
+        Toast.makeText(this, "Logged out successfully. Please login again.", Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * Security check: Validate device hasn't been tampered with
+     */
+    private boolean validateDeviceSecurity() {
+        try {
+            // Basic device security checks
+            String currentDeviceId = DeviceSecurityUtils.getDeviceId(this);
+
+            // Check if device ID has changed (possible tampering)
+            String storedDeviceId = getSharedPreferences("attendance_prefs", MODE_PRIVATE)
+                    .getString("device_id", null);
+
+            if (storedDeviceId != null && !storedDeviceId.equals(currentDeviceId)) {
+                // Device ID changed - possible tampering or device change
+                new AlertDialog.Builder(this)
+                        .setTitle("🔒 Device Security Alert")
+                        .setMessage("Device signature has changed. This could indicate:\n\n" +
+                                "• Device has been reset\n" +
+                                "• App was reinstalled\n" +
+                                "• Security tampering\n\n" +
+                                "For security, please login again.")
+                        .setPositiveButton("Login Again", (dialog, which) -> {
+                            clearStoredData();
+                            mAuth.signOut();
+                        })
+                        .setCancelable(false)
+                        .show();
+                return false;
+            }
+
+            return true;
+        } catch (Exception e) {
+            // If validation fails, allow login but log the error
+            return true;
+        }
+    }
+
+    /**
+     * Update stored device ID when it changes legitimately
+     */
+    private void updateStoredDeviceId() {
+        getSharedPreferences("attendance_prefs", MODE_PRIVATE)
+                .edit()
+                .putString("device_id", deviceId)
+                .apply();
+    }
+    private void setupNotificationsAfterLogin() {
+        try {
+            // Setup notification channel
+            AttendanceNotificationManager.setupNotificationChannel(this);
+
+            // Schedule daily reminders
+            AttendanceNotificationManager.scheduleDailyReminders(this);
+
+            Log.d("LoginActivity", "Attendance notifications scheduled successfully");
+        } catch (Exception e) {
+            Log.e("LoginActivity", "Error setting up notifications: " + e.getMessage());
+        }
     }
 }

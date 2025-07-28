@@ -149,6 +149,89 @@
                 </LinearLayout>
 
             </androidx.cardview.widget.CardView>
+            <!-- Add this Device Validation Card to your activity_attendance.xml -->
+            <!-- Place it after the Time Validation Card -->
+
+            <!-- SECURITY: Device Validation Card -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/cv_device_validation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="24dp"
+                app:cardElevation="6dp"
+                app:cardBackgroundColor="@color/green_50"
+                android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:layout_margin="4dp"
+                android:foreground="?android:attr/selectableItemBackground">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="📱"
+                            android:textSize="24sp"
+                            android:layout_marginEnd="12dp" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Device Security"
+                                android:textSize="18sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/text_primary"
+                                android:layout_marginBottom="4dp" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Tap to refresh device validation"
+                                android:textSize="12sp"
+                                android:textColor="@color/green_600"
+                                android:alpha="0.8" />
+
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🔄"
+                            android:textSize="18sp"
+                            android:alpha="0.6" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tv_device_status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Validating device session..."
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/green_700" />
+
+                </LinearLayout>
+
+            </androidx.cardview.widget.CardView>
 
             <!-- Current Time Card - Enhanced -->
             <androidx.cardview.widget.CardView
