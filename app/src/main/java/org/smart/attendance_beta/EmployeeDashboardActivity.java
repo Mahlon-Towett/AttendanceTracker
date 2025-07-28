@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.os.Bundle;
 import android.os.Handler;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.TextView;
@@ -28,8 +29,10 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.Query;
 import com.google.firebase.firestore.QuerySnapshot;
 
+import org.smart.attendance_beta.services.FCMService;
 import org.smart.attendance_beta.utils.DateTimeUtils;
 import org.smart.attendance_beta.utils.LocationUtils;
+import org.smart.attendance_beta.utils.WeeklyAttendanceUtils;
 
 import java.text.DecimalFormat;
 
@@ -65,7 +68,7 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_employee_dashboard);
-
+        FCMService.initializeFCM(this);
         // Initialize Firebase
         mAuth = FirebaseAuth.getInstance();
         db = FirebaseFirestore.getInstance();
@@ -341,37 +344,143 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
     private void loadWeeklyStats() {
         if (employeeDocId == null) return;
 
-        // Get this week's attendance records
-        db.collection("attendance")
-                .whereEqualTo("employeeDocId", employeeDocId)
-                .orderBy("date", Query.Direction.DESCENDING)
-                .limit(7)
-                .get()
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        QuerySnapshot querySnapshot = task.getResult();
+        // Load weekly stats with comprehensive metrics
+        WeeklyAttendanceUtils.loadWeeklyStats(employeeDocId, new WeeklyAttendanceUtils.WeeklyStatsCallback() {
+            @Override
+            public void onStatsLoaded(WeeklyAttendanceUtils.WeeklyStats stats) {
+                updateWeeklyStatsUI(stats);
 
-                        double totalWeeklyHours = 0;
-                        int attendanceDays = 0;
-
-                        for (DocumentSnapshot doc : querySnapshot.getDocuments()) {
-                            Double hoursWorked = doc.getDouble("totalHours");
-                            if (hoursWorked != null && hoursWorked > 0) {
-                                totalWeeklyHours += hoursWorked;
-                                attendanceDays++;
-                            }
-                        }
-
-                        tvWeeklyHours.setText(DateTimeUtils.formatHoursWorked(totalWeeklyHours));
-                        tvAttendanceStreak.setText(attendanceDays + " days");
+                // Load attendance trend for additional insights
+                WeeklyAttendanceUtils.getAttendanceTrend(employeeDocId, new WeeklyAttendanceUtils.TrendCallback() {
+                    @Override
+                    public void onTrendCalculated(WeeklyAttendanceUtils.AttendanceTrend trend) {
+                        updateTrendUI(stats, trend);
                     }
-                })
-                .addOnFailureListener(e -> {
-                    // Silently handle failure for weekly stats
-                    // No need to show error as this is optional data
+
+                    @Override
+                    public void onError(String error) {
+                        Log.e("WeeklyStats", "Error loading trend: " + error);
+                    }
                 });
+            }
+
+            @Override
+            public void onError(String error) {
+                Log.e("WeeklyStats", "Error loading weekly stats: " + error);
+                // Show fallback data
+                showFallbackWeeklyStats();
+            }
+        });
     }
 
+    /**
+     * Update UI with comprehensive weekly statistics
+     */
+    private void updateWeeklyStatsUI(WeeklyAttendanceUtils.WeeklyStats stats) {
+        // Update total hours
+        if (tvWeeklyHours != null) {
+            tvWeeklyHours.setText(WeeklyAttendanceUtils.formatHoursWorked(stats.totalHours));
+        }
+
+        // Update attendance streak/days
+        if (tvAttendanceStreak != null) {
+            tvAttendanceStreak.setText(stats.daysPresent + "/5 days");
+        }
+
+        // Update weekly stats card with detailed information
+        updateWeeklyStatsCard(stats);
+    }
+
+    /**
+     * Update weekly stats card with detailed metrics
+     */
+    private void updateWeeklyStatsCard(WeeklyAttendanceUtils.WeeklyStats stats) {
+        // Find or create detailed stats views
+        TextView tvWeekRange = findViewById(R.id.tv_week_range);
+        TextView tvAttendancePercentage = findViewById(R.id.tv_attendance_percentage);
+        TextView tvPerformanceBadge = findViewById(R.id.tv_performance_badge);
+        TextView tvWeeklyDetails = findViewById(R.id.tv_weekly_details);
+
+        if (tvWeekRange != null) {
+            tvWeekRange.setText("Week of " + stats.weekRange);
+        }
+
+        if (tvAttendancePercentage != null) {
+            tvAttendancePercentage.setText(String.format("%.0f%%", stats.attendancePercentage));
+
+            // Color code based on performance
+            int color;
+            if (stats.attendancePercentage >= 100) {
+                color = getResources().getColor(R.color.green_600);
+            } else if (stats.attendancePercentage >= 80) {
+                color = getResources().getColor(R.color.blue_600);
+            } else if (stats.attendancePercentage >= 60) {
+                color = getResources().getColor(R.color.orange_600);
+            } else {
+                color = getResources().getColor(R.color.red_600);
+            }
+            tvAttendancePercentage.setTextColor(color);
+        }
+
+        if (tvPerformanceBadge != null) {
+            tvPerformanceBadge.setText(WeeklyAttendanceUtils.getPerformanceBadge(stats));
+        }
+
+        if (tvWeeklyDetails != null) {
+            String details = String.format(
+                    "Average: %s/day • Late: %d days • Total: %s",
+                    WeeklyAttendanceUtils.formatHoursWorked(stats.averageHours),
+                    stats.daysLate,
+                    WeeklyAttendanceUtils.formatHoursWorked(stats.totalHours)
+            );
+            tvWeeklyDetails.setText(details);
+        }
+    }
+
+    /**
+     * Update UI with attendance trend information
+     */
+    private void updateTrendUI(WeeklyAttendanceUtils.WeeklyStats stats, WeeklyAttendanceUtils.AttendanceTrend trend) {
+        // Find trend views
+        TextView tvTrendMessage = findViewById(R.id.tv_trend_message);
+        TextView tvMotivationalMessage = findViewById(R.id.tv_motivational_message);
+
+        if (tvTrendMessage != null) {
+            tvTrendMessage.setText(trend.message);
+
+            // Color code based on trend
+            int color;
+            switch (trend.direction) {
+                case "improving":
+                    color = getResources().getColor(R.color.green_600);
+                    break;
+                case "declining":
+                    color = getResources().getColor(R.color.red_600);
+                    break;
+                default:
+                    color = getResources().getColor(R.color.blue_600);
+                    break;
+            }
+            tvTrendMessage.setTextColor(color);
+        }
+
+        if (tvMotivationalMessage != null) {
+            String motivationalMessage = WeeklyAttendanceUtils.getMotivationalMessage(stats, trend);
+            tvMotivationalMessage.setText(motivationalMessage);
+        }
+    }
+
+    /**
+     * Show fallback weekly stats when data loading fails
+     */
+    private void showFallbackWeeklyStats() {
+        if (tvWeeklyHours != null) {
+            tvWeeklyHours.setText("--");
+        }
+        if (tvAttendanceStreak != null) {
+            tvAttendanceStreak.setText("-- days");
+        }
+    }
     private void requestLocationPermissions() {
         if (!LocationUtils.hasLocationPermissions(this)) {
             ActivityCompat.requestPermissions(this,

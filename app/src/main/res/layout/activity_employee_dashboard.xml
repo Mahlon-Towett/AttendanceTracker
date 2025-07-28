@@ -394,7 +394,7 @@
 
             </androidx.cardview.widget.CardView>
 
-            <!-- Weekly Stats Card - Enhanced -->
+            <!-- Enhanced Weekly Stats Card with Comprehensive Metrics -->
             <androidx.cardview.widget.CardView
                 android:id="@+id/cv_weekly_stats"
                 android:layout_width="match_parent"
@@ -405,6 +405,7 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:layout_margin="4dp"
+                android:layout_marginBottom="20dp"
                 android:foreground="?android:attr/selectableItemBackground">
 
                 <LinearLayout
@@ -413,12 +414,13 @@
                     android:orientation="vertical"
                     android:padding="24dp">
 
+                    <!-- Header Section -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
-                        android:layout_marginBottom="20dp">
+                        android:layout_marginBottom="16dp">
 
                         <View
                             android:layout_width="48dp"
@@ -439,24 +441,39 @@
                                 android:textSize="20sp"
                                 android:textStyle="bold"
                                 android:textColor="@color/text_primary"
-                                android:layout_marginBottom="4dp" />
+                                android:layout_marginBottom="2dp" />
 
                             <TextView
+                                android:id="@+id/tv_week_range"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Weekly summary"
-                                android:textSize="13sp"
+                                android:text="Loading..."
+                                android:textSize="12sp"
                                 android:textColor="@color/purple_600"
                                 android:alpha="0.8" />
 
                         </LinearLayout>
 
+                        <!-- Performance Badge -->
+                        <TextView
+                            android:id="@+id/tv_performance_badge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="📅 Loading"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/purple_600"
+                            android:background="@drawable/weekly_stats_card"
+                            android:padding="8dp" />
+
                     </LinearLayout>
 
+                    <!-- Main Stats Row -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal">
+                        android:orientation="horizontal"
+                        android:layout_marginBottom="16dp">
 
                         <!-- Weekly Hours -->
                         <LinearLayout
@@ -525,7 +542,7 @@
                                 android:id="@+id/tv_attendance_streak"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="0 days"
+                                android:text="0/5 days"
                                 android:textSize="18sp"
                                 android:textStyle="bold"
                                 android:textColor="@color/green_600" />
@@ -533,6 +550,87 @@
                         </LinearLayout>
 
                     </LinearLayout>
+
+                    <!-- Attendance Percentage Bar -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginBottom="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="8dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Attendance Rate"
+                                android:textSize="14sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/text_primary" />
+
+                            <TextView
+                                android:id="@+id/tv_attendance_percentage"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0%"
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/purple_600" />
+
+                        </LinearLayout>
+
+                        <!-- Progress Bar -->
+                        <ProgressBar
+                            android:id="@+id/pb_attendance_rate"
+                            style="?android:attr/progressBarStyleHorizontal"
+                            android:layout_width="match_parent"
+                            android:layout_height="8dp"
+                            android:max="100"
+                            android:progress="0"
+                            android:progressTint="@color/purple_600"
+                            android:progressBackgroundTint="@color/gray_200" />
+
+                    </LinearLayout>
+
+                    <!-- Weekly Details -->
+                    <TextView
+                        android:id="@+id/tv_weekly_details"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Average: --/day • Late: -- days • Total: --"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_secondary"
+                        android:gravity="center"
+                        android:layout_marginBottom="12dp" />
+
+                    <!-- Trend Message -->
+                    <TextView
+                        android:id="@+id/tv_trend_message"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Loading attendance trend..."
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/blue_600"
+                        android:gravity="center"
+                        android:layout_marginBottom="8dp" />
+
+                    <!-- Motivational Message -->
+                    <TextView
+                        android:id="@+id/tv_motivational_message"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Keep up the great work! 💪"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_secondary"
+                        android:gravity="center"
+                        android:fontStyle="italic" />
 
                 </LinearLayout>
 
