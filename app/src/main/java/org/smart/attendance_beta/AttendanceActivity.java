@@ -1,12 +1,13 @@
-// Modified AttendanceActivity.java with simple device session management
 package org.smart.attendance_beta;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.location.Location;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
@@ -39,6 +40,7 @@ import java.util.Map;
 public class AttendanceActivity extends AppCompatActivity {
 
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1001;
+    private static final String TAG = "AttendanceActivity";
 
     // UI Components
     private TextView tvCurrentTime, tvLocationStatus, tvDistanceFromOffice;
@@ -63,6 +65,11 @@ public class AttendanceActivity extends AppCompatActivity {
     private String todayAttendanceDocId = null;
     private String workStartTime = "08:00";
     private String workEndTime = "17:00";
+
+    // ✅ ENHANCED: Multiple office support
+    private java.util.List<OfficeLocation> officeLocations = new java.util.ArrayList<>();
+    private OfficeLocation currentOffice = null;
+    private boolean isAtAnyOffice = false;
 
     // Device Security
     private boolean isTimeValid = false;
@@ -102,7 +109,7 @@ public class AttendanceActivity extends AppCompatActivity {
         checkDeviceSession();
 
         // Load data
-        loadCompanyLocation();
+        loadAllOfficeLocations(); // ✅ ENHANCED: Load all offices instead of just one
         loadTodayAttendance();
 
         // Start updates
@@ -111,6 +118,11 @@ public class AttendanceActivity extends AppCompatActivity {
 
         // Setup click listeners
         setupClickListeners();
+
+        // ✅ ENHANCED: Immediate location refresh on activity start
+        refreshLocationImmediately();
+        // Make status bar transparent and extend content behind it
+
     }
 
     private void setupToolbar() {
@@ -119,10 +131,351 @@ public class AttendanceActivity extends AppCompatActivity {
             setSupportActionBar(toolbar);
             if (getSupportActionBar() != null) {
                 getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-                getSupportActionBar().setTitle("⏰ Attendance");
+                getSupportActionBar().setTitle("Attendance");
             }
         }
     }
+
+    // ✅ NEW METHOD: Immediate location refresh
+    private void refreshLocationImmediately() {
+        Log.d(TAG, "🎯 Refreshing location immediately on activity start");
+
+        if (!LocationUtils.hasLocationPermissions(this)) {
+            Log.w(TAG, "📍 Location permissions not granted, requesting...");
+            requestLocationPermissions();
+            return;
+        }
+
+        // Show loading state
+        if (tvLocationStatus != null) {
+            tvLocationStatus.setText("🔄 Getting current location...");
+        }
+        if (tvDistanceFromOffice != null) {
+            tvDistanceFromOffice.setText("📍 Locating...");
+        }
+
+        // Get fresh location immediately
+        updateLocation();
+
+        // Also get a high-accuracy location update
+        fusedLocationClient.getCurrentLocation(
+                com.google.android.gms.location.LocationRequest.PRIORITY_HIGH_ACCURACY,
+                null
+        ).addOnSuccessListener(location -> {
+            if (location != null) {
+                Log.d(TAG, "📍 High-accuracy location obtained immediately");
+                OfficeDetectionResult result = detectOfficeLocation(location);
+
+                updateLocationUI(result);
+                updateButtonStates();
+
+                // Show success toast with office information
+                String toastMessage;
+                if (result.isAtOffice && result.currentOffice != null) {
+                    toastMessage = "✅ At " + result.currentOffice.name + " (" +
+                            LocationUtils.formatDistance(result.currentDistance) + ")";
+                } else if (result.closestOffice != null) {
+                    toastMessage = "🚫 Outside work area (" +
+                            LocationUtils.formatDistance(result.closestDistance) + " from " +
+                            result.closestOffice.name + ")";
+                } else {
+                    toastMessage = "❌ No office locations available";
+                }
+                Toast.makeText(this, toastMessage, Toast.LENGTH_SHORT).show();
+            } else {
+                Log.w(TAG, "📍 Could not get immediate location");
+            }
+        }).addOnFailureListener(e -> {
+            Log.e(TAG, "📍 Error getting immediate location: " + e.getMessage());
+        });
+    }
+
+    /**
+     * Load all office locations from Firestore
+     */
+    private void loadAllOfficeLocations() {
+        Log.d(TAG, "📍 Loading all office locations...");
+
+        db.collection("locations")
+                .get()
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        officeLocations.clear();
+
+                        for (DocumentSnapshot document : task.getResult()) {
+                            OfficeLocation office = createOfficeFromDocument(document);
+                            if (office != null) {
+                                officeLocations.add(office);
+                                Log.d(TAG, "📍 Loaded office: " + office.name + " at " +
+                                        office.latitude + ", " + office.longitude + " (radius: " + office.radius + "m)");
+                            }
+                        }
+
+                        if (officeLocations.isEmpty()) {
+                            Log.w(TAG, "⚠️ No office locations found, using default");
+                            addDefaultOffice();
+                        }
+
+                        Log.d(TAG, "📍 Total offices loaded: " + officeLocations.size());
+
+                        // Refresh location immediately after loading offices
+                        refreshLocationImmediately();
+                    } else {
+                        Log.e(TAG, "❌ Error loading office locations: " + task.getException().getMessage());
+                        Toast.makeText(this, "Error loading office locations", Toast.LENGTH_SHORT).show();
+                        addDefaultOffice();
+                        refreshLocationImmediately();
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    Log.e(TAG, "❌ Failed to load office locations: " + e.getMessage());
+                    Toast.makeText(this, "Failed to load office locations", Toast.LENGTH_SHORT).show();
+                    addDefaultOffice();
+                    refreshLocationImmediately();
+                });
+    }
+
+    /**
+     * Create OfficeLocation object from Firestore document
+     */
+    private OfficeLocation createOfficeFromDocument(DocumentSnapshot document) {
+        try {
+            String docId = document.getId();
+            String name = document.getString("name");
+            Double lat = document.getDouble("latitude");
+            Double lng = document.getDouble("longitude");
+            Long radius = document.getLong("radius");
+
+            if (lat != null && lng != null) {
+                OfficeLocation office = new OfficeLocation();
+                office.id = docId;
+                office.name = name != null ? name : formatOfficeName(docId);
+                office.latitude = lat;
+                office.longitude = lng;
+                office.radius = radius != null ? radius.intValue() : 200;
+                return office;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Error parsing office document " + document.getId() + ": " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Format office name from document ID
+     */
+    private String formatOfficeName(String docId) {
+        switch (docId) {
+            case "company-main":
+                return "Main Office";
+            case "town-campus":
+                return "Town Campus";
+            default:
+                // Convert kebab-case to Title Case
+                String[] words = docId.replace("-", " ").replace("_", " ").split(" ");
+                StringBuilder result = new StringBuilder();
+                for (String word : words) {
+                    if (word.length() > 0) {
+                        result.append(Character.toUpperCase(word.charAt(0)));
+                        if (word.length() > 1) {
+                            result.append(word.substring(1).toLowerCase());
+                        }
+                        result.append(" ");
+                    }
+                }
+                return result.toString().trim();
+        }
+    }
+
+    /**
+     * Add default office if none loaded
+     */
+    private void addDefaultOffice() {
+        OfficeLocation defaultOffice = new OfficeLocation();
+        defaultOffice.id = "company-main";
+        defaultOffice.name = "Main Office";
+        defaultOffice.latitude = companyLatitude;
+        defaultOffice.longitude = companyLongitude;
+        defaultOffice.radius = companyRadius;
+        officeLocations.add(defaultOffice);
+    }
+
+    /**
+     * Detect which office (if any) the user is currently at
+     */
+    private OfficeDetectionResult detectOfficeLocation(Location userLocation) {
+        OfficeDetectionResult result = new OfficeDetectionResult();
+        result.isAtOffice = false;
+        result.closestOffice = null;
+        result.closestDistance = Double.MAX_VALUE;
+
+        for (OfficeLocation office : officeLocations) {
+            double distance = LocationUtils.calculateDistance(
+                    userLocation.getLatitude(), userLocation.getLongitude(),
+                    office.latitude, office.longitude
+            );
+
+            // Check if user is within this office's radius
+            if (distance <= office.radius) {
+                result.isAtOffice = true;
+                result.currentOffice = office;
+                result.currentDistance = distance;
+
+                // Update global state
+                currentOffice = office;
+                isAtAnyOffice = true;
+
+                Log.d(TAG, "✅ User is at " + office.name + " (distance: " + String.format("%.0f", distance) + "m)");
+                return result;
+            }
+
+            // Track closest office even if not within radius
+            if (distance < result.closestDistance) {
+                result.closestDistance = distance;
+                result.closestOffice = office;
+            }
+        }
+
+        // User is not at any office
+        currentOffice = null;
+        isAtAnyOffice = false;
+        result.currentDistance = result.closestDistance;
+
+        Log.d(TAG, "🚫 User not at any office. Closest: " +
+                (result.closestOffice != null ? result.closestOffice.name : "None") +
+                " (" + String.format("%.0f", result.closestDistance) + "m)");
+
+        return result;
+    }
+
+    private void updateLocationUI(OfficeDetectionResult result) {
+        if (result.isAtOffice && result.currentOffice != null) {
+            // ✅ User is at an office
+            tvLocationStatus.setText("✅ At " + result.currentOffice.name);
+            tvDistanceFromOffice.setText(LocationUtils.formatDistance(result.currentDistance) + " from " + result.currentOffice.name);
+            cvLocationInfo.setCardBackgroundColor(getResources().getColor(R.color.green_50));
+
+        } else if (result.closestOffice != null) {
+            // ❌ User is not at any office, show closest
+            tvLocationStatus.setText("🚫 Outside office area");
+            tvDistanceFromOffice.setText(LocationUtils.formatDistance(result.closestDistance) + " from " + result.closestOffice.name);
+
+            // Color based on distance from closest office
+            if (result.closestDistance <= result.closestOffice.radius + 100) {
+                cvLocationInfo.setCardBackgroundColor(getResources().getColor(R.color.orange_50));
+            } else {
+                cvLocationInfo.setCardBackgroundColor(getResources().getColor(R.color.red_50));
+            }
+        } else {
+            // ❌ No offices available
+            tvLocationStatus.setText("❌ No office locations available");
+            tvDistanceFromOffice.setText("Contact administrator");
+            cvLocationInfo.setCardBackgroundColor(getResources().getColor(R.color.red_50));
+        }
+    }
+
+    private void updateLocation() {
+        if (!LocationUtils.hasLocationPermissions(this)) {
+            return;
+        }
+
+        fusedLocationClient.getLastLocation()
+                .addOnSuccessListener(this, location -> {
+                    if (location != null) {
+                        // ✅ ENHANCED: Check against all office locations
+                        OfficeDetectionResult result = detectOfficeLocation(location);
+
+                        Log.d(TAG, "📍 Location updated - " + result.toString());
+                        updateLocationUI(result);
+                        updateButtonStates();
+                    } else {
+                        Log.w(TAG, "📍 No location available");
+                        tvLocationStatus.setText("Unable to get location");
+                        tvDistanceFromOffice.setText("Check GPS settings");
+                        updateButtonStates();
+                    }
+                })
+                .addOnFailureListener(this, e -> {
+                    Log.e(TAG, "📍 Location error: " + e.getMessage());
+                    tvLocationStatus.setText("Location error");
+                    tvDistanceFromOffice.setText("Please check GPS");
+                    updateButtonStates();
+                });
+    }
+
+    /**
+     * Enhanced button state validation for multiple offices
+     */
+    private void updateButtonStates() {
+        // SECURITY CHECK: Disable buttons if time or device is not valid
+        if (!isTimeValid || !isDeviceValid) {
+            btnClockIn.setEnabled(false);
+            btnClockOut.setEnabled(false);
+            return;
+        }
+
+        if (!LocationUtils.hasLocationPermissions(this)) {
+            btnClockIn.setEnabled(false);
+            btnClockOut.setEnabled(false);
+            return;
+        }
+
+        // ✅ ENHANCED: Use multiple office detection
+        if (isClockedIn) {
+            btnClockOut.setEnabled(isAtAnyOffice);
+            btnClockIn.setEnabled(false);
+        } else {
+            btnClockIn.setEnabled(isAtAnyOffice);
+            btnClockOut.setEnabled(false);
+        }
+    }
+
+    // ✅ NEW: Data classes for multi-office support
+
+    /**
+     * Office location data class
+     */
+    private static class OfficeLocation {
+        public String id;
+        public String name;
+        public double latitude;
+        public double longitude;
+        public int radius;
+
+        @Override
+        public String toString() {
+            return name + " (" + latitude + ", " + longitude + ", " + radius + "m)";
+        }
+    }
+
+    /**
+     * Office detection result class
+     */
+    private static class OfficeDetectionResult {
+        public boolean isAtOffice;
+        public OfficeLocation currentOffice;  // Office user is currently at
+        public double currentDistance;        // Distance to current office
+        public OfficeLocation closestOffice;  // Closest office if not at any
+        public double closestDistance;        // Distance to closest office
+
+        @Override
+        public String toString() {
+            if (isAtOffice && currentOffice != null) {
+                return "At " + currentOffice.name + " (" + String.format("%.0f", currentDistance) + "m)";
+            } else if (closestOffice != null) {
+                return "Not at office. Closest: " + closestOffice.name + " (" + String.format("%.0f", closestDistance) + "m)";
+            } else {
+                return "No office locations available";
+            }
+        }
+    }
+
+    // === FIRST HALF ENDS HERE ===
+    // Ready for second half with device validation, clock in/out methods, etc.
+
+// === FIRST HALF ENDS HERE ===
+// Ready for second half with device validation, clock in/out methods, etc.
+// === SECOND HALF CONTINUES FROM PART 1 ===
 
     /**
      * Check if this device can be used for attendance (prevent multi-device abuse)
@@ -182,14 +535,23 @@ public class AttendanceActivity extends AppCompatActivity {
         String deviceModel = session.getString("deviceModel");
         String deviceManufacturer = session.getString("deviceManufacturer");
         String clockInTime = session.getString("clockInTime");
+        String officeName = session.getString("officeName");
 
+        String deviceInfo = "Unknown device";
         if (deviceModel != null && deviceManufacturer != null) {
-            return deviceManufacturer + " " + deviceModel +
-                    (clockInTime != null ? " (clocked in at " + DateTimeUtils.formatTimeForDisplay(clockInTime) + ")" : "");
-        } else {
-            return "Unknown device" +
-                    (clockInTime != null ? " (clocked in at " + DateTimeUtils.formatTimeForDisplay(clockInTime) + ")" : "");
+            deviceInfo = deviceManufacturer + " " + deviceModel;
         }
+
+        String additionalInfo = "";
+        if (clockInTime != null) {
+            additionalInfo += " (clocked in at " + DateTimeUtils.formatTimeForDisplay(clockInTime);
+            if (officeName != null) {
+                additionalInfo += " from " + officeName;
+            }
+            additionalInfo += ")";
+        }
+
+        return deviceInfo + additionalInfo;
     }
 
     /**
@@ -339,24 +701,6 @@ public class AttendanceActivity extends AppCompatActivity {
         btnClockOut.setVisibility(View.GONE);
     }
 
-    private void loadCompanyLocation() {
-        db.collection("locations").document("company-main")
-                .get()
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        DocumentSnapshot document = task.getResult();
-                        if (document.exists()) {
-                            Double lat = document.getDouble("latitude");
-                            Double lng = document.getDouble("longitude");
-                            Long radius = document.getLong("radius");
-
-                            if (lat != null) companyLatitude = lat;
-                            if (lng != null) companyLongitude = lng;
-                            if (radius != null) companyRadius = radius.intValue();
-                        }
-                    }
-                });
-    }
     private void loadTodayAttendance() {
         if (employeeDocId == null) return;
 
@@ -375,6 +719,7 @@ public class AttendanceActivity extends AppCompatActivity {
 
                         String clockInTime = attendance.getString("clockInTime");
                         String clockOutTime = attendance.getString("clockOutTime");
+                        String officeName = attendance.getString("officeName");
                         Boolean sessionActive = attendance.getBoolean("sessionActive");
 
                         if (clockInTime != null) {
@@ -382,12 +727,16 @@ public class AttendanceActivity extends AppCompatActivity {
 
                             if (sessionActive != null && sessionActive && clockOutTime == null) {
                                 isClockedIn = true;
-                                tvTodayStatus.setText("Clocked In ✅");
+                                String statusText = officeName != null ?
+                                        "Clocked In at " + officeName + " ✅" : "Clocked In ✅";
+                                tvTodayStatus.setText(statusText);
                                 btnClockIn.setVisibility(View.GONE);
                                 btnClockOut.setVisibility(View.VISIBLE);
                             } else if (clockOutTime != null) {
                                 isClockedIn = false;
-                                tvTodayStatus.setText("Work Complete ✅");
+                                String statusText = officeName != null ?
+                                        "Work Complete at " + officeName + " ✅" : "Work Complete ✅";
+                                tvTodayStatus.setText(statusText);
                                 tvClockOutTime.setText(DateTimeUtils.formatTimeForDisplay(clockOutTime));
 
                                 double hours = DateTimeUtils.calculateHoursWorked(clockInTime, clockOutTime);
@@ -435,7 +784,7 @@ public class AttendanceActivity extends AppCompatActivity {
             @Override
             public void run() {
                 updateLocation();
-                locationUpdateHandler.postDelayed(this, 10000);
+                locationUpdateHandler.postDelayed(this, 10000);  // Continue periodic updates every 10 seconds
             }
         };
         locationUpdateHandler.post(locationUpdateRunnable);
@@ -456,101 +805,16 @@ public class AttendanceActivity extends AppCompatActivity {
 
         if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.d(TAG, "✅ Location permission granted, starting location updates");
                 startLocationUpdates();
+                // ✅ ENHANCED: Immediate refresh after permission granted
+                refreshLocationImmediately();
             } else {
+                Log.w(TAG, "❌ Location permission denied");
                 tvLocationStatus.setText("Location permission required");
                 tvDistanceFromOffice.setText("Enable location to use attendance");
             }
         }
-    }
-
-    private void updateLocation() {
-        if (!LocationUtils.hasLocationPermissions(this)) {
-            return;
-        }
-
-        fusedLocationClient.getLastLocation()
-                .addOnSuccessListener(this, location -> {
-                    if (location != null) {
-                        double distance = LocationUtils.calculateDistance(
-                                location.getLatitude(), location.getLongitude(),
-                                companyLatitude, companyLongitude
-                        );
-
-                        updateLocationUI(distance);
-                        updateButtonStates();
-                    } else {
-                        tvLocationStatus.setText("Unable to get location");
-                        tvDistanceFromOffice.setText("Check GPS settings");
-                        updateButtonStates();
-                    }
-                })
-                .addOnFailureListener(this, e -> {
-                    tvLocationStatus.setText("Location error");
-                    tvDistanceFromOffice.setText("Please check GPS");
-                    updateButtonStates();
-                });
-    }
-
-    private void updateLocationUI(double distance) {
-        DecimalFormat df = new DecimalFormat("#.#");
-        tvDistanceFromOffice.setText(LocationUtils.formatDistance(distance) + " from office");
-
-        String status = LocationUtils.getLocationStatus(distance, companyRadius);
-        tvLocationStatus.setText(status);
-
-        if (distance <= companyRadius) {
-            cvLocationInfo.setCardBackgroundColor(getResources().getColor(R.color.green_50));
-        } else if (distance <= companyRadius + 100) {
-            cvLocationInfo.setCardBackgroundColor(getResources().getColor(R.color.orange_50));
-        } else {
-            cvLocationInfo.setCardBackgroundColor(getResources().getColor(R.color.red_50));
-        }
-    }
-
-    /**
-     * Enhanced button state validation including device validation
-     */
-    private void updateButtonStates() {
-        // SECURITY CHECK: Disable buttons if time or device is not valid
-        if (!isTimeValid || !isDeviceValid) {
-            btnClockIn.setEnabled(false);
-            btnClockOut.setEnabled(false);
-            return;
-        }
-
-        if (!LocationUtils.hasLocationPermissions(this)) {
-            btnClockIn.setEnabled(false);
-            btnClockOut.setEnabled(false);
-            return;
-        }
-
-        fusedLocationClient.getLastLocation()
-                .addOnSuccessListener(location -> {
-                    if (location != null) {
-                        double distance = LocationUtils.calculateDistance(
-                                location.getLatitude(), location.getLongitude(),
-                                companyLatitude, companyLongitude
-                        );
-
-                        boolean inRange = distance <= companyRadius;
-
-                        if (isClockedIn) {
-                            btnClockOut.setEnabled(inRange);
-                            btnClockIn.setEnabled(false);
-                        } else {
-                            btnClockIn.setEnabled(inRange);
-                            btnClockOut.setEnabled(false);
-                        }
-                    } else {
-                        btnClockIn.setEnabled(false);
-                        btnClockOut.setEnabled(false);
-                    }
-                })
-                .addOnFailureListener(e -> {
-                    btnClockIn.setEnabled(false);
-                    btnClockOut.setEnabled(false);
-                });
     }
 
     private void setupClickListeners() {
@@ -576,8 +840,9 @@ public class AttendanceActivity extends AppCompatActivity {
         });
 
         cvLocationInfo.setOnClickListener(v -> {
-            updateLocation();
-            Toast.makeText(this, "Location updated", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "🔄 Manual location refresh requested");
+            refreshLocationImmediately();
+            Toast.makeText(this, "📍 Location refreshed", Toast.LENGTH_SHORT).show();
         });
 
         if (cvTimeValidation != null) {
@@ -630,11 +895,16 @@ public class AttendanceActivity extends AppCompatActivity {
     }
 
     /**
-     * Clock in with device session management
+     * Clock in with device session management and multi-office support
      */
     private void clockIn() {
         if (!LocationUtils.hasLocationPermissions(this)) {
             requestLocationPermissions();
+            return;
+        }
+
+        if (!isAtAnyOffice || currentOffice == null) {
+            Toast.makeText(this, "You must be at an office location to clock in", Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -643,17 +913,16 @@ public class AttendanceActivity extends AppCompatActivity {
         fusedLocationClient.getLastLocation()
                 .addOnSuccessListener(location -> {
                     if (location != null) {
-                        double distance = LocationUtils.calculateDistance(
-                                location.getLatitude(), location.getLongitude(),
-                                companyLatitude, companyLongitude
-                        );
+                        OfficeDetectionResult result = detectOfficeLocation(location);
 
-                        if (distance <= companyRadius) {
-                            performClockIn(location.getLatitude(), location.getLongitude());
+                        if (result.isAtOffice && result.currentOffice != null) {
+                            performClockIn(location.getLatitude(), location.getLongitude(), result.currentOffice);
                         } else {
                             setLoading(false);
-                            Toast.makeText(this, "You're too far from the office to clock in",
-                                    Toast.LENGTH_LONG).show();
+                            String message = result.closestOffice != null ?
+                                    "You're too far from " + result.closestOffice.name + " to clock in" :
+                                    "You're not at any office location";
+                            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
                         }
                     } else {
                         setLoading(false);
@@ -669,9 +938,9 @@ public class AttendanceActivity extends AppCompatActivity {
     }
 
     /**
-     * Perform clock in with device tracking
+     * Perform clock in with device tracking and office information
      */
-    private void performClockIn(double latitude, double longitude) {
+    private void performClockIn(double latitude, double longitude, OfficeLocation office) {
         String today = DateTimeUtils.getCurrentDate();
         String currentTime = DateTimeUtils.getCurrentTime();
 
@@ -679,7 +948,7 @@ public class AttendanceActivity extends AppCompatActivity {
         boolean isLate = DateTimeUtils.isLateArrival(currentTime, workStartTime);
         int lateMinutes = isLate ? DateTimeUtils.calculateLateMinutes(currentTime, workStartTime) : 0;
 
-        // Create attendance record with device information
+        // Create attendance record with device and office information
         Map<String, Object> attendanceData = new HashMap<>();
         attendanceData.put("employeeDocId", employeeDocId);
         attendanceData.put("pfNumber", pfNumber);
@@ -689,7 +958,12 @@ public class AttendanceActivity extends AppCompatActivity {
         attendanceData.put("clockInTimestamp", com.google.firebase.Timestamp.now());
         attendanceData.put("clockInLatitude", latitude);
         attendanceData.put("clockInLongitude", longitude);
-        attendanceData.put("locationName", "Company Office");
+
+        // ✅ ENHANCED: Store office information
+        attendanceData.put("officeId", office.id);
+        attendanceData.put("officeName", office.name);
+        attendanceData.put("locationName", office.name);
+
         attendanceData.put("status", isLate ? "Late" : "Present");
         attendanceData.put("totalHours", 0.0);
         attendanceData.put("isLate", isLate);
@@ -720,12 +994,12 @@ public class AttendanceActivity extends AppCompatActivity {
                     tvClockInTime.setText(DateTimeUtils.formatTimeForDisplay(currentTime));
 
                     if (isLate) {
-                        tvTodayStatus.setText("Clocked In (Late) ⚠️");
-                        Toast.makeText(this, "Clocked in successfully! You are " + lateMinutes + " minutes late.",
+                        tvTodayStatus.setText("Clocked In at " + office.name + " (Late) ⚠️");
+                        Toast.makeText(this, "Clocked in at " + office.name + "! You are " + lateMinutes + " minutes late.",
                                 Toast.LENGTH_LONG).show();
                     } else {
-                        tvTodayStatus.setText("Clocked In ✅");
-                        Toast.makeText(this, "Successfully clocked in!", Toast.LENGTH_SHORT).show();
+                        tvTodayStatus.setText("Clocked In at " + office.name + " ✅");
+                        Toast.makeText(this, "Successfully clocked in at " + office.name + "!", Toast.LENGTH_SHORT).show();
                     }
 
                     btnClockIn.setVisibility(View.GONE);
@@ -740,11 +1014,16 @@ public class AttendanceActivity extends AppCompatActivity {
     }
 
     /**
-     * Clock out with session termination
+     * Clock out with session termination and multi-office support
      */
     private void clockOut(String earlyClockOutReason) {
         if (!LocationUtils.hasLocationPermissions(this) || todayAttendanceDocId == null) {
             Toast.makeText(this, "Cannot clock out: No active session", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (!isAtAnyOffice) {
+            Toast.makeText(this, "You must be at an office location to clock out", Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -753,17 +1032,16 @@ public class AttendanceActivity extends AppCompatActivity {
         fusedLocationClient.getLastLocation()
                 .addOnSuccessListener(location -> {
                     if (location != null) {
-                        double distance = LocationUtils.calculateDistance(
-                                location.getLatitude(), location.getLongitude(),
-                                companyLatitude, companyLongitude
-                        );
+                        OfficeDetectionResult result = detectOfficeLocation(location);
 
-                        if (distance <= companyRadius) {
-                            performClockOut(location.getLatitude(), location.getLongitude(), earlyClockOutReason);
+                        if (result.isAtOffice && result.currentOffice != null) {
+                            performClockOut(location.getLatitude(), location.getLongitude(), earlyClockOutReason, result.currentOffice);
                         } else {
                             setLoading(false);
-                            Toast.makeText(this, "You're too far from the office to clock out",
-                                    Toast.LENGTH_LONG).show();
+                            String message = result.closestOffice != null ?
+                                    "You're too far from " + result.closestOffice.name + " to clock out" :
+                                    "You're not at any office location";
+                            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
                         }
                     } else {
                         setLoading(false);
@@ -779,9 +1057,9 @@ public class AttendanceActivity extends AppCompatActivity {
     }
 
     /**
-     * Perform clock out with session termination
+     * Perform clock out with session termination and office information
      */
-    private void performClockOut(double latitude, double longitude, String earlyClockOutReason) {
+    private void performClockOut(double latitude, double longitude, String earlyClockOutReason, OfficeLocation office) {
         String currentTime = DateTimeUtils.getCurrentTime();
 
         // Get clock in time to calculate hours worked
@@ -796,6 +1074,10 @@ public class AttendanceActivity extends AppCompatActivity {
         updates.put("totalHours", hoursWorked);
         updates.put("sessionActive", false); // Terminate session
         updates.put("sessionEndTime", com.google.firebase.Timestamp.now());
+
+        // ✅ ENHANCED: Store clock-out office information
+        updates.put("clockOutOfficeId", office.id);
+        updates.put("clockOutOfficeName", office.name);
 
         if (earlyClockOutReason != null && !earlyClockOutReason.isEmpty()) {
             updates.put("earlyClockOutReason", earlyClockOutReason);
@@ -813,13 +1095,13 @@ public class AttendanceActivity extends AppCompatActivity {
                     tvHoursWorked.setText(DateTimeUtils.formatHoursWorked(hoursWorked));
 
                     if (earlyClockOutReason != null) {
-                        tvTodayStatus.setText("Early Clock Out ⚠️");
-                        Toast.makeText(this, "Clocked out early! Total hours: " +
+                        tvTodayStatus.setText("Early Clock Out from " + office.name + " ⚠️");
+                        Toast.makeText(this, "Clocked out early from " + office.name + "! Total hours: " +
                                         DateTimeUtils.formatHoursWorked(hoursWorked) + ". Reason logged for admin review.",
                                 Toast.LENGTH_LONG).show();
                     } else {
-                        tvTodayStatus.setText("Work Complete ✅");
-                        Toast.makeText(this, "Successfully clocked out! Total hours: " +
+                        tvTodayStatus.setText("Work Complete at " + office.name + " ✅");
+                        Toast.makeText(this, "Successfully clocked out from " + office.name + "! Total hours: " +
                                 DateTimeUtils.formatHoursWorked(hoursWorked), Toast.LENGTH_LONG).show();
                     }
 
@@ -851,6 +1133,32 @@ public class AttendanceActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        Log.d(TAG, "🔄 Activity started - refreshing location automatically");
+
+        // ✅ ENHANCED: Auto-refresh location on activity start
+        if (LocationUtils.hasLocationPermissions(this)) {
+            refreshLocationImmediately();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        Log.d(TAG, "🔄 Activity resumed - refreshing validations and location");
+
+        // Re-validate device session when app resumes
+        checkDeviceSession();
+        validateDeviceTime();
+
+        // ✅ ENHANCED: Auto-refresh location on activity resume
+        if (LocationUtils.hasLocationPermissions(this)) {
+            refreshLocationImmediately();
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
         if (locationUpdateHandler != null && locationUpdateRunnable != null) {
@@ -861,11 +1169,4 @@ public class AttendanceActivity extends AppCompatActivity {
         }
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        // Re-validate device session when app resumes
-        checkDeviceSession();
-        validateDeviceTime();
-    }
-}
+} // End of AttendanceActivity class

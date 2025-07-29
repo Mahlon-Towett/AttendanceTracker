@@ -6,16 +6,19 @@
     android:orientation="vertical"
     android:background="@color/gray_50">
 
-    <!-- Toolbar -->
+    <!-- Toolbar with extended height to cover status bar -->
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
+        android:layout_height="wrap_content"
         android:background="@drawable/gradient_background_modern"
         android:elevation="12dp"
-        app:title="⏰ Attendance"
+        android:minHeight="?attr/actionBarSize"
+        android:paddingTop="15dp"
+        android:fitsSystemWindows="true"
+        app:title="Attendance"
         app:titleTextColor="@color/white"
-        app:navigationIcon="?attr/homeAsUpIndicator"
+        app:navigationIcon="@drawable/arr_ios"
         app:navigationIconTint="@color/white" />
 
     <!-- Enhanced Header with Gradient -->

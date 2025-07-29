@@ -3,6 +3,7 @@ package org.smart.attendance_beta;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.location.Location;
 import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
@@ -27,13 +28,46 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import org.smart.attendance_beta.notifications.AttendanceNotificationManager;
 import org.smart.attendance_beta.utils.DateTimeUtils;
 import org.smart.attendance_beta.utils.LocationUtils;
+import org.smart.attendance_beta.utils.OfficeLocation;
 import org.smart.attendance_beta.utils.WeeklyAttendanceUtils;
+import org.smart.attendance_beta.utils.GreetingsAndStatsUtils;  // ✅ ONLY ADDITION: Smart greetings
 
 import java.text.DecimalFormat;
 
 public class EmployeeDashboardActivity extends AppCompatActivity {
 
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1001;
+    private static final String TAG = "EmployeeDashboard";
+
+    // ✅ DATA CLASSES DEFINED FIRST (before any usage)
+
+    /**
+     * Office detection result class
+     */
+    private static class OfficeDetectionResult {
+        public boolean isAtOffice;
+        public OfficeLocation currentOffice;  // Office user is currently at
+        public double currentDistance;        // Distance to current office
+        public OfficeLocation closestOffice;  // Closest office if not at any
+        public double closestDistance;        // Distance to closest office
+
+        public OfficeDetectionResult() {
+            this.isAtOffice = false;
+            this.currentDistance = 0.0;
+            this.closestDistance = Double.MAX_VALUE;
+        }
+
+        @Override
+        public String toString() {
+            if (isAtOffice && currentOffice != null) {
+                return "At " + currentOffice.name + " (" + String.format("%.0f", currentDistance) + "m)";
+            } else if (closestOffice != null) {
+                return "Not at office. Closest: " + closestOffice.name + " (" + String.format("%.0f", closestDistance) + "m)";
+            } else {
+                return "No office locations available";
+            }
+        }
+    }
 
     // UI Components
     private TextView tvWelcome, tvEmployeeId, tvDepartment;
@@ -54,6 +88,11 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
     private String pfNumber;
     private String employeeName;
     private String department;
+
+    // ✅ ENHANCED: Multiple office support for Employee Dashboard
+    private java.util.List<OfficeLocation> officeLocations = new java.util.ArrayList<>();
+    private OfficeLocation currentOffice = null;
+    private boolean isAtAnyOffice = false;
 
     // Update Handler
     private Handler locationUpdateHandler = new Handler();
@@ -85,13 +124,11 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
 
         // Load data
         loadUserData();
-        loadCompanyLocation();
+        loadAllOfficeLocations(); // ✅ This will handle location updates after offices load
+        loadTodayAttendance();
+        loadWeeklyStats();
 
-        // Request location permissions
-        requestLocationPermissions();
-
-        // Setup click listeners
-        setupClickListeners();
+        // Don't request permissions here - let loadAllOfficeLocations handle it
     }
 
     private void redirectToLogin() {
@@ -228,11 +265,16 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
             pfNumber = employeeDoc.getString("pfNumber");
             department = employeeDoc.getString("department");
 
-            // Update UI with employee data
+            // ✅ ENHANCED: Use smart greetings instead of simple first name
             if (employeeName != null) {
-                String firstName = getFirstName(employeeName);
+                // Use the smart greeting system that handles titles properly
+                String smartGreeting = GreetingsAndStatsUtils.generateSmartGreeting(employeeName);
+                tvWelcome.setText(smartGreeting);
+                Log.d("SmartGreeting", "Applied: " + smartGreeting + " for: " + employeeName);
+            } else {
+                // Fallback to your original logic
                 String greeting = DateTimeUtils.getTimeBasedGreeting();
-                tvWelcome.setText(greeting + ", " + firstName + "!");
+                tvWelcome.setText(greeting + "!");
             }
 
             if (pfNumber != null) {
@@ -266,33 +308,182 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
         tvDepartment.setText("Contact HR");
     }
 
-    private void loadCompanyLocation() {
-        db.collection("locations").document("company-main")
+    /**
+     * Load all office locations from Firestore
+     */
+    private void loadAllOfficeLocations() {
+        Log.d(TAG, "📍 Loading all office locations for dashboard...");
+
+        db.collection("locations")
                 .get()
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
-                        DocumentSnapshot document = task.getResult();
-                        if (document.exists()) {
-                            Double lat = document.getDouble("latitude");
-                            Double lng = document.getDouble("longitude");
-                            Long radius = document.getLong("radius");
+                        officeLocations.clear();
 
-                            if (lat != null) companyLatitude = lat;
-                            if (lng != null) companyLongitude = lng;
-                            if (radius != null) companyRadius = radius.intValue();
+                        for (DocumentSnapshot document : task.getResult()) {
+                            OfficeLocation office = createOfficeFromDocument(document);
+                            if (office != null) {
+                                officeLocations.add(office);
+                                Log.d(TAG, "📍 Loaded office: " + office.name + " at " +
+                                        office.latitude + ", " + office.longitude + " (radius: " + office.radius + "m)");
+                            }
                         }
-                        // Start location updates after getting company location
-                        startLocationUpdates();
+
+                        if (officeLocations.isEmpty()) {
+                            Log.w(TAG, "⚠️ No office locations found, using default");
+                            addDefaultOffice();
+                        }
+
+                        Log.d(TAG, "📍 Total offices loaded: " + officeLocations.size());
+
+                        // ✅ FIXED: Request permissions and start location updates AFTER loading offices
+                        requestLocationPermissions();
+                        setupClickListeners();
+
+                        // ✅ FIXED: Immediate location update after offices are loaded
+                        if (LocationUtils.hasLocationPermissions(this)) {
+                            updateLocation();
+                            Log.d(TAG, "🎯 Immediate location update after loading offices");
+                        }
+
                     } else {
-                        Toast.makeText(this, "Error loading company location", Toast.LENGTH_SHORT).show();
-                        // Use default location and start updates anyway
-                        startLocationUpdates();
+                        Log.e(TAG, "❌ Error loading office locations: " + task.getException().getMessage());
+                        Toast.makeText(this, "Error loading office locations", Toast.LENGTH_SHORT).show();
+                        addDefaultOffice();
+                        requestLocationPermissions();
+                        setupClickListeners();
+
+                        // ✅ FIXED: Update location immediately even with default office
+                        if (LocationUtils.hasLocationPermissions(this)) {
+                            updateLocation();
+                        }
                     }
                 })
                 .addOnFailureListener(e -> {
-                    Toast.makeText(this, "Failed to load company location", Toast.LENGTH_SHORT).show();
-                    startLocationUpdates();
+                    Log.e(TAG, "❌ Failed to load office locations: " + e.getMessage());
+                    Toast.makeText(this, "Failed to load office locations", Toast.LENGTH_SHORT).show();
+                    addDefaultOffice();
+                    requestLocationPermissions();
+                    setupClickListeners();
+
+                    // ✅ FIXED: Update location immediately even on error
+                    if (LocationUtils.hasLocationPermissions(this)) {
+                        updateLocation();
+                    }
                 });
+    }
+
+    /**
+     * Create OfficeLocation object from Firestore document
+     */
+    private OfficeLocation createOfficeFromDocument(DocumentSnapshot document) {
+        try {
+            String docId = document.getId();
+            String name = document.getString("name");
+            Double lat = document.getDouble("latitude");
+            Double lng = document.getDouble("longitude");
+            Long radius = document.getLong("radius");
+
+            if (lat != null && lng != null) {
+                OfficeLocation office = new OfficeLocation();
+                office.id = docId;
+                office.name = name != null ? name : formatOfficeName(docId);
+                office.latitude = lat;
+                office.longitude = lng;
+                office.radius = radius != null ? radius.intValue() : 200;
+                return office;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Error parsing office document " + document.getId() + ": " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Format office name from document ID
+     */
+    private String formatOfficeName(String docId) {
+        switch (docId) {
+            case "company-main":
+                return "Main Office";
+            case "town-campus":
+                return "Town Campus";
+            default:
+                // Convert kebab-case to Title Case
+                String[] words = docId.replace("-", " ").replace("_", " ").split(" ");
+                StringBuilder result = new StringBuilder();
+                for (String word : words) {
+                    if (word.length() > 0) {
+                        result.append(Character.toUpperCase(word.charAt(0)));
+                        if (word.length() > 1) {
+                            result.append(word.substring(1).toLowerCase());
+                        }
+                        result.append(" ");
+                    }
+                }
+                return result.toString().trim();
+        }
+    }
+
+    /**
+     * Add default office if none loaded
+     */
+    private void addDefaultOffice() {
+        OfficeLocation defaultOffice = new OfficeLocation();
+        defaultOffice.id = "company-main";
+        defaultOffice.name = "Main Office";
+        defaultOffice.latitude = companyLatitude;
+        defaultOffice.longitude = companyLongitude;
+        defaultOffice.radius = companyRadius;
+        officeLocations.add(defaultOffice);
+    }
+
+    /**
+     * Detect which office (if any) the user is currently at
+     */
+    private OfficeDetectionResult detectOfficeLocation(Location userLocation) {
+        OfficeDetectionResult result = new OfficeDetectionResult();
+        result.isAtOffice = false;
+        result.closestOffice = null;
+        result.closestDistance = Double.MAX_VALUE;
+
+        for (OfficeLocation office : officeLocations) {
+            double distance = LocationUtils.calculateDistance(
+                    userLocation.getLatitude(), userLocation.getLongitude(),
+                    office.latitude, office.longitude
+            );
+
+            // Check if user is within this office's radius
+            if (distance <= office.radius) {
+                result.isAtOffice = true;
+                result.currentOffice = office;
+                result.currentDistance = distance;
+
+                // Update global state
+                currentOffice = office;
+                isAtAnyOffice = true;
+
+                Log.d(TAG, "✅ User is at " + office.name + " (distance: " + String.format("%.0f", distance) + "m)");
+                return result;
+            }
+
+            // Track closest office even if not within radius
+            if (distance < result.closestDistance) {
+                result.closestDistance = distance;
+                result.closestOffice = office;
+            }
+        }
+
+        // User is not at any office
+        currentOffice = null;
+        isAtAnyOffice = false;
+        result.currentDistance = result.closestDistance;
+
+        Log.d(TAG, "🚫 User not at any office. Closest: " +
+                (result.closestOffice != null ? result.closestOffice.name : "None") +
+                " (" + String.format("%.0f", result.closestDistance) + "m)");
+
+        return result;
     }
 
     private void loadTodayAttendance() {
@@ -493,6 +684,9 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
         if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 startLocationUpdates();
+                // ✅ FIXED: Immediate location update after permission granted
+                updateLocation();
+                Log.d(TAG, "✅ Location permission granted, immediate update triggered");
             } else {
                 tvLocationStatus.setText("Location permission denied");
                 tvDistanceFromOffice.setText("Enable location to track attendance");
@@ -524,12 +718,11 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
         fusedLocationClient.getLastLocation()
                 .addOnSuccessListener(this, location -> {
                     if (location != null) {
-                        double distance = LocationUtils.calculateDistance(
-                                location.getLatitude(), location.getLongitude(),
-                                companyLatitude, companyLongitude
-                        );
+                        // ✅ ENHANCED: Check against all office locations
+                        OfficeDetectionResult result = detectOfficeLocation(location);
 
-                        updateLocationUI(distance);
+                        Log.d(TAG, "📍 Dashboard location updated - " + result.toString());
+                        updateLocationUI(result);
                     } else {
                         tvLocationStatus.setText("Unable to get location");
                         tvDistanceFromOffice.setText("Check GPS settings");
@@ -541,22 +734,30 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
                 });
     }
 
-    private void updateLocationUI(double distance) {
-        DecimalFormat df = new DecimalFormat("#.#");
-
-        // Update distance display
-        tvDistanceFromOffice.setText(LocationUtils.formatDistance(distance) + " from office");
-
-        // Update status
-        String status = LocationUtils.getLocationStatus(distance, companyRadius);
-        tvLocationStatus.setText(status);
-
-        // Update card background color based on location
-        if (distance <= companyRadius) {
+    private void updateLocationUI(OfficeDetectionResult result) {
+        if (result.isAtOffice && result.currentOffice != null) {
+            // ✅ User is at an office
+            String status = LocationUtils.getLocationStatus(result.currentDistance, result.currentOffice.radius);
+            tvLocationStatus.setText("✅ At " + result.currentOffice.name);
+            tvDistanceFromOffice.setText(LocationUtils.formatDistance(result.currentDistance) + " from " + result.currentOffice.name);
             cvLocationStatus.setCardBackgroundColor(getResources().getColor(R.color.green_50));
-        } else if (distance <= companyRadius + 100) {
-            cvLocationStatus.setCardBackgroundColor(getResources().getColor(R.color.orange_50));
+
+        } else if (result.closestOffice != null) {
+            // ❌ User is not at any office, show closest
+            String status = LocationUtils.getLocationStatus(result.closestDistance, result.closestOffice.radius);
+            tvLocationStatus.setText("🚫 Outside office area");
+            tvDistanceFromOffice.setText(LocationUtils.formatDistance(result.closestDistance) + " from " + result.closestOffice.name);
+
+            // Color based on distance from closest office
+            if (result.closestDistance <= result.closestOffice.radius + 100) {
+                cvLocationStatus.setCardBackgroundColor(getResources().getColor(R.color.orange_50));
+            } else {
+                cvLocationStatus.setCardBackgroundColor(getResources().getColor(R.color.red_50));
+            }
         } else {
+            // ❌ No offices available
+            tvLocationStatus.setText("❌ No office locations available");
+            tvDistanceFromOffice.setText("Contact administrator");
             cvLocationStatus.setCardBackgroundColor(getResources().getColor(R.color.red_50));
         }
     }
@@ -643,6 +844,12 @@ public class EmployeeDashboardActivity extends AppCompatActivity {
         // Refresh data when returning to dashboard
         loadTodayAttendance();
         loadWeeklyStats();
+
+        // ✅ ENHANCED: Auto-refresh location when activity resumes
+        if (LocationUtils.hasLocationPermissions(this)) {
+            updateLocation();
+            Log.d("Dashboard", "📍 Location refreshed automatically on resume");
+        }
     }
 
     @Override

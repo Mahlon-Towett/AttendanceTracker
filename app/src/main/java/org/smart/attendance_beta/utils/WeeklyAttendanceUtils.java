@@ -1,66 +1,31 @@
-// Enhanced WeeklyAttendanceUtils.java - Comprehensive weekly metrics
 package org.smart.attendance_beta.utils;
+
+import android.util.Log;
 
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.Query;
 
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 
 public class WeeklyAttendanceUtils {
 
-    public static class WeeklyStats {
-        public double totalHours;
-        public int daysPresent;
-        public int daysLate;
-        public int totalWorkDays;
-        public double averageHours;
-        public boolean perfectAttendance;
-        public List<DayStats> dailyStats;
-        public String weekRange;
-        public double attendancePercentage;
+    private static final String TAG = "WeeklyAttendanceUtils";
 
-        public WeeklyStats() {
-            this.dailyStats = new ArrayList<>();
-        }
-    }
-
-    public static class DayStats {
-        public String date;
-        public String dayName;
-        public boolean present;
-        public boolean late;
-        public double hoursWorked;
-        public String clockInTime;
-        public String clockOutTime;
-        public String status;
-
-        public DayStats(String date, String dayName) {
-            this.date = date;
-            this.dayName = dayName;
-            this.present = false;
-            this.late = false;
-            this.hoursWorked = 0.0;
-            this.clockInTime = "--:--";
-            this.clockOutTime = "--:--";
-            this.status = "Absent";
-        }
-    }
-
+    // Callbacks for async operations
     public interface WeeklyStatsCallback {
         void onStatsLoaded(WeeklyStats stats);
         void onError(String error);
     }
 
+    public interface TrendCallback {
+        void onTrendCalculated(AttendanceTrend trend);
+        void onError(String error);
+    }
+
     /**
-     * Load comprehensive weekly attendance statistics
+     * Load weekly statistics for an employee
      */
     public static void loadWeeklyStats(String employeeDocId, WeeklyStatsCallback callback) {
         FirebaseFirestore db = FirebaseFirestore.getInstance();
@@ -68,11 +33,10 @@ public class WeeklyAttendanceUtils {
         // Get current week date range
         String[] weekDates = getCurrentWeekDates();
         String startDate = weekDates[0];
-        String endDate = weekDates[6]; // Include weekend for completeness
+        String endDate = weekDates[6];
 
-        // Query attendance records for the current week
         db.collection("attendance")
-                .whereEqualTo("employeeDocId", employeeDocId)
+                .whereEqualTo("employeeId", employeeDocId)
                 .whereGreaterThanOrEqualTo("date", startDate)
                 .whereLessThanOrEqualTo("date", endDate)
                 .orderBy("date", Query.Direction.ASCENDING)
@@ -86,6 +50,41 @@ public class WeeklyAttendanceUtils {
                     }
                 })
                 .addOnFailureListener(e -> callback.onError("Error loading weekly stats: " + e.getMessage()));
+    }
+
+    /**
+     * Get attendance trend for an employee
+     */
+    public static void getAttendanceTrend(String employeeDocId, TrendCallback callback) {
+        // For now, return a simple trend based on current week
+        loadWeeklyStats(employeeDocId, new WeeklyStatsCallback() {
+            @Override
+            public void onStatsLoaded(WeeklyStats stats) {
+                AttendanceTrend trend = new AttendanceTrend();
+
+                // Determine trend based on performance
+                if (stats.attendancePercentage >= 90) {
+                    trend.direction = "improving";
+                    trend.message = "📈 Excellent attendance trend!";
+                    trend.description = "Outstanding performance this week";
+                } else if (stats.attendancePercentage >= 70) {
+                    trend.direction = "stable";
+                    trend.message = "📊 Steady attendance pattern";
+                    trend.description = "Consistent performance";
+                } else {
+                    trend.direction = "declining";
+                    trend.message = "📉 Room for improvement";
+                    trend.description = "Focus on better attendance";
+                }
+
+                callback.onTrendCalculated(trend);
+            }
+
+            @Override
+            public void onError(String error) {
+                callback.onError(error);
+            }
+        });
     }
 
     /**
@@ -115,6 +114,14 @@ public class WeeklyAttendanceUtils {
     private static WeeklyStats calculateWeeklyStats(List<DocumentSnapshot> attendanceDocs, String[] weekDates) {
         WeeklyStats stats = new WeeklyStats();
 
+        // Initialize
+        stats.dailyStats = new ArrayList<>();
+        stats.totalWorkDays = 5; // Monday to Friday
+        stats.daysPresent = 0;
+        stats.totalHours = 0.0;
+        stats.lateDays = 0;
+        stats.earlyDepartures = 0;
+
         // Create map for quick lookup
         Map<String, DocumentSnapshot> attendanceMap = new HashMap<>();
         for (DocumentSnapshot doc : attendanceDocs) {
@@ -141,238 +148,182 @@ public class WeeklyAttendanceUtils {
         }
 
         // Calculate overall statistics
-        stats.totalWorkDays = 5; // Monday to Friday
-        stats.averageHours = stats.daysPresent > 0 ? stats.totalHours / stats.daysPresent : 0.0;
-        stats.perfectAttendance = (stats.daysPresent == 5 && stats.daysLate == 0);
-        stats.attendancePercentage = (stats.daysPresent * 100.0) / stats.totalWorkDays;
+        stats.attendancePercentage = stats.totalWorkDays > 0 ?
+                (double) stats.daysPresent / stats.totalWorkDays * 100 : 0;
+        stats.averageHours = stats.daysPresent > 0 ?
+                stats.totalHours / stats.daysPresent : 0;
 
-        // Format week range
-        stats.weekRange = formatWeekRange(weekDates[0], weekDates[4]); // Monday to Friday
+        // ✅ ADDED: Sync daysLate with lateDays for compatibility
+        stats.daysLate = stats.lateDays;
+
+        // Set week range
+        SimpleDateFormat displayFormat = new SimpleDateFormat("MMM dd", Locale.getDefault());
+        try {
+            SimpleDateFormat parseFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+            Date startDate = parseFormat.parse(weekDates[0]);
+            Date endDate = parseFormat.parse(weekDates[6]);
+            stats.weekRange = displayFormat.format(startDate) + " - " + displayFormat.format(endDate);
+        } catch (Exception e) {
+            stats.weekRange = "This Week";
+        }
 
         return stats;
     }
 
-    /**
-     * Process individual attendance record
-     */
     private static void processAttendanceRecord(DocumentSnapshot doc, DayStats dayStats, WeeklyStats stats) {
         String clockInTime = doc.getString("clockInTime");
         String clockOutTime = doc.getString("clockOutTime");
-        Boolean isLate = doc.getBoolean("isLate");
-        Double totalHours = doc.getDouble("totalHours");
-        String status = doc.getString("status");
+        Double hoursWorked = doc.getDouble("hoursWorked");
 
-        dayStats.present = true;
-        dayStats.clockInTime = clockInTime != null ?
-                DateTimeUtils.formatTimeForDisplay(clockInTime) : "--:--";
-        dayStats.clockOutTime = clockOutTime != null ?
-                DateTimeUtils.formatTimeForDisplay(clockOutTime) : "--:--";
-        dayStats.late = isLate != null && isLate;
-        dayStats.hoursWorked = totalHours != null ? totalHours : 0.0;
-        dayStats.status = status != null ? status : "Present";
+        dayStats.clockInTime = clockInTime;
+        dayStats.clockOutTime = clockOutTime;
+        dayStats.hoursWorked = hoursWorked != null ? hoursWorked : 0.0;
+        dayStats.isPresent = clockInTime != null;
 
-        // Update weekly totals (only count weekdays)
-        if (isWeekday(dayStats.dayName)) {
-            stats.daysPresent++;
-            if (dayStats.late) {
-                stats.daysLate++;
-            }
-            if (dayStats.hoursWorked > 0) {
+        // Only count work days (Monday-Friday) for main stats
+        if (dayStats.isWorkDay()) {
+            if (dayStats.isPresent) {
+                stats.daysPresent++;
                 stats.totalHours += dayStats.hoursWorked;
+
+                // Check for late arrival (after 9:00 AM)
+                if (isLateArrival(clockInTime)) {
+                    stats.lateDays++;
+                    dayStats.isLate = true;
+                }
+
+                // Check for early departure (before 5:00 PM)
+                if (isEarlyDeparture(clockOutTime)) {
+                    stats.earlyDepartures++;
+                    dayStats.isEarlyDeparture = true;
+                }
             }
         }
     }
 
-    /**
-     * Check if day is a weekday (Monday-Friday)
-     */
-    private static boolean isWeekday(String dayName) {
-        return !dayName.equals("Saturday") && !dayName.equals("Sunday");
-    }
-
-    /**
-     * Format week range for display
-     */
-    private static String formatWeekRange(String startDate, String endDate) {
+    private static boolean isLateArrival(String clockInTime) {
+        if (clockInTime == null) return false;
         try {
-            SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-            SimpleDateFormat outputFormat = new SimpleDateFormat("MMM dd", Locale.getDefault());
-
-            Date start = inputFormat.parse(startDate);
-            Date end = inputFormat.parse(endDate);
-
-            return outputFormat.format(start) + " - " + outputFormat.format(end);
+            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
+            Date clockIn = sdf.parse(clockInTime);
+            Date nineAM = sdf.parse("09:00");
+            return clockIn.after(nineAM);
         } catch (Exception e) {
-            return startDate + " - " + endDate;
+            return false;
         }
     }
 
-    /**
-     * Get attendance trend (improving, declining, stable)
-     */
-    public static void getAttendanceTrend(String employeeDocId, TrendCallback callback) {
-        FirebaseFirestore db = FirebaseFirestore.getInstance();
-
-        // Get last 4 weeks of data
-        Calendar calendar = Calendar.getInstance();
-        calendar.add(Calendar.WEEK_OF_YEAR, -4);
-        String fourWeeksAgo = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(calendar.getTime());
-
-        db.collection("attendance")
-                .whereEqualTo("employeeDocId", employeeDocId)
-                .whereGreaterThanOrEqualTo("date", fourWeeksAgo)
-                .orderBy("date", Query.Direction.ASCENDING)
-                .get()
-                .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        AttendanceTrend trend = calculateTrend(task.getResult().getDocuments());
-                        callback.onTrendCalculated(trend);
-                    } else {
-                        callback.onError("Failed to calculate trend: " + task.getException().getMessage());
-                    }
-                });
-    }
-
-    public static class AttendanceTrend {
-        public String direction; // "improving", "declining", "stable"
-        public double changePercentage;
-        public String message;
-        public List<WeeklyPoint> weeklyPoints;
-
-        public AttendanceTrend() {
-            this.weeklyPoints = new ArrayList<>();
+    private static boolean isEarlyDeparture(String clockOutTime) {
+        if (clockOutTime == null) return false;
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
+            Date clockOut = sdf.parse(clockOutTime);
+            Date fivePM = sdf.parse("17:00");
+            return clockOut.before(fivePM);
+        } catch (Exception e) {
+            return false;
         }
-    }
-
-    public static class WeeklyPoint {
-        public String weekOf;
-        public int daysPresent;
-        public double hoursWorked;
-        public double attendanceRate;
-    }
-
-    public interface TrendCallback {
-        void onTrendCalculated(AttendanceTrend trend);
-        void onError(String error);
-    }
-
-    /**
-     * Calculate attendance trend over the last 4 weeks
-     */
-    private static AttendanceTrend calculateTrend(List<DocumentSnapshot> docs) {
-        AttendanceTrend trend = new AttendanceTrend();
-
-        // Group by weeks
-        Map<String, List<DocumentSnapshot>> weeklyGroups = new HashMap<>();
-        SimpleDateFormat weekFormat = new SimpleDateFormat("yyyy-'W'ww", Locale.getDefault());
-
-        for (DocumentSnapshot doc : docs) {
-            String date = doc.getString("date");
-            if (date != null) {
-                try {
-                    Date docDate = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(date);
-                    String weekKey = weekFormat.format(docDate);
-
-                    weeklyGroups.computeIfAbsent(weekKey, k -> new ArrayList<>()).add(doc);
-                } catch (Exception e) {
-                    // Skip invalid dates
-                }
-            }
-        }
-
-        // Calculate weekly points
-        for (Map.Entry<String, List<DocumentSnapshot>> entry : weeklyGroups.entrySet()) {
-            WeeklyPoint point = new WeeklyPoint();
-            point.weekOf = entry.getKey();
-
-            for (DocumentSnapshot doc : entry.getValue()) {
-                point.daysPresent++;
-                Double hours = doc.getDouble("totalHours");
-                if (hours != null) {
-                    point.hoursWorked += hours;
-                }
-            }
-
-            point.attendanceRate = (point.daysPresent * 100.0) / 5; // Assuming 5-day work week
-            trend.weeklyPoints.add(point);
-        }
-
-        // Determine trend direction
-        if (trend.weeklyPoints.size() >= 2) {
-            WeeklyPoint first = trend.weeklyPoints.get(0);
-            WeeklyPoint last = trend.weeklyPoints.get(trend.weeklyPoints.size() - 1);
-
-            double change = last.attendanceRate - first.attendanceRate;
-            trend.changePercentage = Math.abs(change);
-
-            if (change > 5) {
-                trend.direction = "improving";
-                trend.message = "Your attendance is improving! Keep up the good work! 📈";
-            } else if (change < -5) {
-                trend.direction = "declining";
-                trend.message = "Your attendance needs attention. Let's get back on track! 📉";
-            } else {
-                trend.direction = "stable";
-                trend.message = "Your attendance is consistent. Great job maintaining regularity! 📊";
-            }
-        } else {
-            trend.direction = "insufficient_data";
-            trend.message = "Not enough data to determine trend. Keep tracking! 📅";
-        }
-
-        return trend;
     }
 
     /**
      * Format hours worked for display
      */
     public static String formatHoursWorked(double hours) {
-        if (hours == 0) return "0h 0m";
-
-        int totalMinutes = (int) (hours * 60);
-        int hrs = totalMinutes / 60;
-        int mins = totalMinutes % 60;
-
-        if (hrs > 0 && mins > 0) {
-            return String.format("%dh %dm", hrs, mins);
-        } else if (hrs > 0) {
-            return String.format("%dh", hrs);
-        } else {
-            return String.format("%dm", mins);
+        if (hours == 0) {
+            return "0.0 hrs";
         }
+        return String.format(Locale.getDefault(), "%.1f hrs", hours);
     }
 
     /**
-     * Get performance badge based on weekly stats
+     * Get performance badge based on attendance percentage
      */
     public static String getPerformanceBadge(WeeklyStats stats) {
-        if (stats.perfectAttendance) {
-            return "🏆 Perfect Week!";
-        } else if (stats.daysPresent >= 4 && stats.daysLate == 0) {
-            return "⭐ Excellent!";
-        } else if (stats.daysPresent >= 3) {
-            return "👍 Good!";
-        } else if (stats.daysPresent >= 2) {
+        if (stats.attendancePercentage >= 100) {
+            return "🏆 Perfect";
+        } else if (stats.attendancePercentage >= 90) {
+            return "⭐ Excellent";
+        } else if (stats.attendancePercentage >= 80) {
+            return "👍 Good";
+        } else if (stats.attendancePercentage >= 70) {
             return "📈 Improving";
         } else {
-            return "📅 Needs Focus";
+            return "⚠️ Needs Attention";
         }
     }
 
     /**
-     * Get motivational message based on performance
+     * Get motivational message based on stats and trend
      */
     public static String getMotivationalMessage(WeeklyStats stats, AttendanceTrend trend) {
-        if (stats.perfectAttendance) {
-            return "Outstanding! You had perfect attendance this week! 🌟";
+        if (stats.attendancePercentage >= 100) {
+            return "🎉 Perfect attendance! Keep up the excellent work!";
+        } else if (stats.attendancePercentage >= 90) {
+            return "⭐ Great job this week! You're doing fantastic!";
+        } else if (stats.attendancePercentage >= 80) {
+            return "👍 Good work! A few more days and you'll be excellent!";
         } else if (trend.direction.equals("improving")) {
-            return "Great progress! Your attendance is getting better each week! 🚀";
-        } else if (stats.daysPresent >= 4) {
-            return "Almost there! Just one more day for perfect attendance! 💪";
-        } else if (trend.direction.equals("declining")) {
-            return "Let's bounce back! Every great comeback starts with showing up! 🔄";
+            return "📈 You're improving! Keep pushing forward!";
         } else {
-            return "Every day counts! You've got this! 💫";
+            return "💪 Let's aim for better attendance next week!";
+        }
+    }
+
+    // Data classes
+    public static class WeeklyStats {
+        public List<DayStats> dailyStats;
+        public double totalHours;
+        public int daysPresent;
+        public int totalWorkDays;
+        public double attendancePercentage;
+        public double averageHours;
+        public int lateDays;
+        public int earlyDepartures;
+        public int daysLate;  // ✅ ADDED: Alias for lateDays to match your existing code
+        public String weekRange;
+
+        // Constructor to ensure daysLate matches lateDays
+        public WeeklyStats() {
+            this.lateDays = 0;
+            this.earlyDepartures = 0;
+            this.daysLate = 0;  // Initialize both for compatibility
+        }
+    }
+
+    public static class DayStats {
+        public String date;
+        public String dayName;
+        public String clockInTime;
+        public String clockOutTime;
+        public double hoursWorked;
+        public boolean isPresent;
+        public boolean isLate;
+        public boolean isEarlyDeparture;
+
+        public DayStats(String date, String dayName) {
+            this.date = date;
+            this.dayName = dayName;
+            this.hoursWorked = 0.0;
+            this.isPresent = false;
+            this.isLate = false;
+            this.isEarlyDeparture = false;
+        }
+
+        public boolean isWorkDay() {
+            // Monday to Friday are work days
+            return !dayName.equals("Saturday") && !dayName.equals("Sunday");
+        }
+    }
+
+    public static class AttendanceTrend {
+        public String direction; // "improving", "declining", "stable"
+        public String description;
+        public String message;  // ✅ ADDED: Message field for trend display
+
+        public AttendanceTrend() {
+            this.direction = "stable";
+            this.description = "Based on current week's performance";
+            this.message = "Keep up the good work!";
         }
     }
 }
