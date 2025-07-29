@@ -1,8 +1,14 @@
 // Modified LoginActivity.java with device session checking
 package org.smart.attendance_beta;
 
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
@@ -11,10 +17,12 @@ import android.widget.EditText;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
-
+import android.Manifest;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
@@ -45,7 +53,6 @@ public class LoginActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
-
         // Initialize device ID
         deviceId = DeviceSecurityUtils.getDeviceId(this);
 
@@ -450,8 +457,20 @@ public class LoginActivity extends AppCompatActivity {
         startActivity(intent);
         finish();
     }
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
 
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1001);
+            }
+        }
+    }
     private void redirectToEmployeeDashboard() {
+        // Request notification permission first
+        requestNotificationPermission();
+
         // Setup notifications for logged in employee
         setupNotificationsAfterLogin();
 
@@ -611,4 +630,5 @@ public class LoginActivity extends AppCompatActivity {
             Log.e("LoginActivity", "Error setting up notifications: " + e.getMessage());
         }
     }
+    // Add to LoginActivity after login
 }

@@ -67,7 +67,7 @@ public class AttendanceNotificationManager {
         // Set for 8:00 AM
         Calendar calendar = Calendar.getInstance();
         calendar.set(Calendar.HOUR_OF_DAY, 1);
-        calendar.set(Calendar.MINUTE, 26);
+        calendar.set(Calendar.MINUTE, 38);
         calendar.set(Calendar.SECOND, 0);
 
         // If it's already past 8 AM today, schedule for tomorrow
